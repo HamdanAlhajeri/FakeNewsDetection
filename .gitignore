@@ -1,0 +1,6 @@
+.env
+*.npz
+*.csv
+*.tsv
+*.log
+*.pkl

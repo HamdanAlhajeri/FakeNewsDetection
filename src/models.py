@@ -1,11 +1,11 @@
 """
 Model definitions for Fake News Detection.
-Includes BERT, RoBERTa, and Hybrid models.
+Uses Tinker SDK for LoRA fine-tuning of a supported LLM.
 """
 
 import numpy as np
 import logging
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List, Optional
 from sklearn.utils.class_weight import compute_class_weight
 
 logger = logging.getLogger(__name__)
@@ -13,41 +13,37 @@ logger = logging.getLogger(__name__)
 
 class ClassBalancer:
     """Handle class imbalance in dataset."""
-    
+
     @staticmethod
     def compute_class_weights(y: np.ndarray, num_classes: int) -> Dict[int, float]:
         """
         Compute class weights for imbalanced dataset.
-        
+
         Args:
             y: Encoded labels array
             num_classes: Number of classes
-            
+
         Returns:
-            Dictionary mapping class to weight
+            Dictionary mapping class index to weight
         """
         logger.info("Computing class weights...")
-        
         classes = np.arange(num_classes)
         weights = compute_class_weight('balanced', classes=classes, y=y)
-        
         class_weights = {i: w for i, w in enumerate(weights)}
-        
-        logger.info("Class weights:")
+        logger.info("Class weights computed:")
         for cls, weight in class_weights.items():
             logger.info(f"  Class {cls}: {weight:.4f}")
-        
         return class_weights
-    
+
     @staticmethod
     def oversample_minority(X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Oversample minority classes to balance dataset.
-        
+
         Args:
             X: Padded sequences
             y: Labels
-            
+
         Returns:
             Oversampled X and y
         """
@@ -56,33 +52,25 @@ class ClassBalancer:
         except ImportError:
             logger.warning("imbalanced-learn not installed. Install via: pip install imbalanced-learn")
             return X, y
-        
+
         logger.info("Oversampling minority classes...")
-        
-        # Reshape for RandomOverSampler (expects 2D)
         original_shape = X.shape
         X_flat = X.reshape(X.shape[0], -1)
-        
         ros = RandomOverSampler(random_state=42)
         X_resampled, y_resampled = ros.fit_resample(X_flat, y)
-        
-        # Reshape back
         X_resampled = X_resampled.reshape(-1, original_shape[1])
-        
-        logger.info(f"Original dataset size: {len(y)}")
-        logger.info(f"Resampled dataset size: {len(y_resampled)}")
-        
+        logger.info(f"Original: {len(y)} → Resampled: {len(y_resampled)}")
         return X_resampled, y_resampled
-    
+
     @staticmethod
     def undersample_majority(X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Undersample majority classes to balance dataset.
-        
+
         Args:
             X: Padded sequences
             y: Labels
-            
+
         Returns:
             Undersampled X and y
         """
@@ -91,337 +79,299 @@ class ClassBalancer:
         except ImportError:
             logger.warning("imbalanced-learn not installed. Install via: pip install imbalanced-learn")
             return X, y
-        
+
         logger.info("Undersampling majority classes...")
-        
-        # Reshape for RandomUnderSampler
         original_shape = X.shape
         X_flat = X.reshape(X.shape[0], -1)
-        
         rus = RandomUnderSampler(random_state=42)
         X_resampled, y_resampled = rus.fit_resample(X_flat, y)
-        
-        # Reshape back
         X_resampled = X_resampled.reshape(-1, original_shape[1])
-        
-        logger.info(f"Original dataset size: {len(y)}")
-        logger.info(f"Resampled dataset size: {len(y_resampled)}")
-        
+        logger.info(f"Original: {len(y)} → Resampled: {len(y_resampled)}")
         return X_resampled, y_resampled
 
 
-class BERTModel:
-    """BERT-based text classification model."""
-    
-    def __init__(self, model_name: str = "bert-base-uncased", num_classes: int = 6):
-        """
-        Initialize BERT model.
-        
-        Args:
-            model_name: Hugging Face model name
-            num_classes: Number of output classes
-        """
-        self.model_name = model_name
-        self.num_classes = num_classes
-        self.model = None
-        self.tokenizer = None
-        logger.info(f"Initialized BERT model: {model_name}")
-    
-    def load_model(self):
-        """Load pretrained BERT model and tokenizer."""
-        try:
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
-        except ImportError:
-            logger.error("transformers library not installed. Install via: pip install transformers torch")
-            raise
-        
-        logger.info(f"Loading {self.model_name}...")
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            self.model_name,
-            num_labels=self.num_classes
-        )
-        
-        logger.info("Model and tokenizer loaded successfully")
-    
-    def prepare_inputs(self, texts: list, max_length: int = 128) -> Dict[str, np.ndarray]:
-        """
-        Prepare inputs for BERT.
-        
-        Args:
-            texts: List of text strings
-            max_length: Maximum sequence length
-            
-        Returns:
-            Dictionary with input_ids, attention_mask, token_type_ids
-        """
-        logger.info(f"Preparing {len(texts)} texts for BERT...")
-        
-        encodings = self.tokenizer(
-            texts,
-            truncation=True,
-            padding='max_length',
-            max_length=max_length,
-            return_tensors=None
-        )
-        
-        return encodings
-    
-    def get_model_info(self) -> Dict[str, Any]:
-        """Get model information."""
-        info = {
-            'model_name': self.model_name,
-            'type': 'BERT',
-            'num_classes': self.num_classes,
-            'status': 'loaded' if self.model else 'not loaded',
-        }
-        if self.model:
-            info['num_parameters'] = sum(p.numel() for p in self.model.parameters())
-        else:
-            info['num_parameters'] = '110M (estimated)'
-        return info
-
-
-class RoBERTaModel:
-    """RoBERTa-based text classification model."""
-    
-    def __init__(self, model_name: str = "roberta-base", num_classes: int = 6):
-        """
-        Initialize RoBERTa model.
-        
-        Args:
-            model_name: Hugging Face model name
-            num_classes: Number of output classes
-        """
-        self.model_name = model_name
-        self.num_classes = num_classes
-        self.model = None
-        self.tokenizer = None
-        logger.info(f"Initialized RoBERTa model: {model_name}")
-    
-    def load_model(self):
-        """Load pretrained RoBERTa model and tokenizer."""
-        try:
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
-        except ImportError:
-            logger.error("transformers library not installed. Install via: pip install transformers torch")
-            raise
-        
-        logger.info(f"Loading {self.model_name}...")
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            self.model_name,
-            num_labels=self.num_classes
-        )
-        
-        logger.info("Model and tokenizer loaded successfully")
-    
-    def prepare_inputs(self, texts: list, max_length: int = 128) -> Dict[str, np.ndarray]:
-        """
-        Prepare inputs for RoBERTa.
-        
-        Args:
-            texts: List of text strings
-            max_length: Maximum sequence length
-            
-        Returns:
-            Dictionary with input_ids, attention_mask, token_type_ids
-        """
-        logger.info(f"Preparing {len(texts)} texts for RoBERTa...")
-        
-        encodings = self.tokenizer(
-            texts,
-            truncation=True,
-            padding='max_length',
-            max_length=max_length,
-            return_tensors=None
-        )
-        
-        return encodings
-    
-    def get_model_info(self) -> Dict[str, Any]:
-        """Get model information."""
-        info = {
-            'model_name': self.model_name,
-            'type': 'RoBERTa',
-            'num_classes': self.num_classes,
-            'status': 'loaded' if self.model else 'not loaded',
-        }
-        if self.model:
-            info['num_parameters'] = sum(p.numel() for p in self.model.parameters())
-        else:
-            info['num_parameters'] = '125M (estimated)'
-        return info
-
-
-class HybridModel:
+class TinkerClassifier:
     """
-    Hybrid model combining BERT, RoBERTa, and traditional features.
-    Uses ensemble predictions and weighted averaging.
+    Fake news classifier using Tinker LoRA fine-tuning on a supported LLM.
+
+    Training flow:
+        classifier = TinkerClassifier(base_model='nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16')
+        classifier.connect()
+        classifier.create_training_client()
+        tokenizer = classifier.get_tokenizer()
+        # ... build datums from data_processor.prepare_tinker_dataset() ...
+        for epoch in range(epochs):
+            loss = classifier.train_step(batch)
+        classifier.save_for_inference()
+        label = classifier.predict("Some political statement")
+
+    Inference flow (from saved weights):
+        classifier = TinkerClassifier(base_model='...')
+        classifier.connect()
+        classifier.load_sampling_client(tinker_uri)
+        label = classifier.predict("Some political statement")
     """
-    
-    def __init__(self, num_classes: int = 6, use_tinker: bool = False):
-        """
-        Initialize Hybrid model.
-        
-        Args:
-            num_classes: Number of output classes
-            use_tinker: Whether to use Tinker API for model training
-        """
-        self.num_classes = num_classes
-        self.use_tinker = use_tinker
-        self.bert_model = None
-        self.roberta_model = None
-        self.weights = {'bert': 0.4, 'roberta': 0.4, 'features': 0.2}
-        logger.info(f"Initialized Hybrid model with Tinker={use_tinker}")
-    
-    def load_models(self):
-        """Load both BERT and RoBERTa models."""
-        logger.info("Loading BERT and RoBERTa models...")
-        
-        self.bert_model = BERTModel(num_classes=self.num_classes)
-        self.bert_model.load_model()
-        
-        self.roberta_model = RoBERTaModel(num_classes=self.num_classes)
-        self.roberta_model.load_model()
-        
-        logger.info("Both models loaded successfully")
-    
-    def set_weights(self, bert_weight: float, roberta_weight: float, features_weight: float):
-        """
-        Set ensemble weights.
-        
-        Args:
-            bert_weight: Weight for BERT predictions
-            roberta_weight: Weight for RoBERTa predictions
-            features_weight: Weight for traditional features
-        """
-        total = bert_weight + roberta_weight + features_weight
-        self.weights = {
-            'bert': bert_weight / total,
-            'roberta': roberta_weight / total,
-            'features': features_weight / total
-        }
-        logger.info(f"Updated ensemble weights: {self.weights}")
-    
-    def get_model_info(self) -> Dict[str, Any]:
-        """Get model information."""
-        return {
-            'type': 'Hybrid Ensemble',
-            'num_classes': self.num_classes,
-            'use_tinker': self.use_tinker,
-            'weights': self.weights,
-            'models': [
-                'BERT (bert-base-uncased)',
-                'RoBERTa (roberta-base)',
-                'Traditional Features'
-            ]
-        }
 
+    # Labels sorted alphabetically — must match LabelEncoder order
+    LABELS = ['barely-true', 'false', 'half-true', 'mostly-true', 'pants-fire', 'true']
 
-class TinkerIntegration:
-    """Integration with ThinkingMachine's Tinker API."""
-    
-    def __init__(self, api_key: str, api_url: str = "https://api.tinker.thinkingmachines.ai"):
+    def __init__(self, base_model: str, prompt_template: Optional[str] = None):
         """
-        Initialize Tinker API integration.
-        
         Args:
-            api_key: Tinker API key
-            api_url: Tinker API URL
+            base_model: Tinker model identifier (e.g. 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16')
+            prompt_template: Classification prompt with {text} placeholder.
+                             Defaults to PROMPT_TEMPLATE from config.
         """
-        self.api_key = api_key
-        self.api_url = api_url
-        self.session = None
-        logger.info(f"Initialized Tinker API integration: {api_url}")
-    
+        self.base_model = base_model
+        if prompt_template is None:
+            from config import PROMPT_TEMPLATE
+            self.prompt_template = PROMPT_TEMPLATE
+        else:
+            self.prompt_template = prompt_template
+
+        self.service_client = None
+        self.training_client = None
+        self.sampling_client = None
+        self._tokenizer = None
+        logger.info(f"TinkerClassifier initialized with base_model={base_model}")
+
+    # ── Connection ────────────────────────────────────────────────────────────
+
     def connect(self):
-        """Establish connection to Tinker API."""
+        """
+        Connect to the Tinker service.
+        Reads TINKER_API_KEY from the environment automatically.
+        """
         try:
-            import requests
-            self.session = requests.Session()
-            self.session.headers.update({
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json'
-            })
-            logger.info("Connected to Tinker API")
+            from tinker import ServiceClient
         except ImportError:
-            logger.error("requests library not installed. Install via: pip install requests")
-            raise
-    
-    def submit_training_job(self, model_config: Dict[str, Any], data: Dict[str, np.ndarray]) -> str:
+            raise ImportError("tinker SDK not installed. Run: pip install tinker")
+
+        logger.info("Connecting to Tinker...")
+        self.service_client = ServiceClient()
+        logger.info("Connected to Tinker service")
+
+    # ── Training ──────────────────────────────────────────────────────────────
+
+    def create_training_client(self, lora_rank: int = 16):
         """
-        Submit a training job to Tinker API.
-        
+        Initialize LoRA training on the remote model.
+        Blocks until Tinker has allocated resources (usually a few seconds).
+
         Args:
-            model_config: Model configuration
-            data: Training data (X_train, y_train, X_val, y_val)
-            
-        Returns:
-            Job ID
+            lora_rank: LoRA rank. Higher = more parameters, slower but potentially
+                       better quality. 16 is a good default.
         """
-        if not self.session:
+        if self.service_client is None:
             self.connect()
-        
-        logger.info("Submitting training job to Tinker API...")
-        
-        payload = {
-            'model_config': model_config,
-            'data_shape': {
-                'X_train': data['X_train'].shape,
-                'y_train': data['y_train'].shape,
-                'X_val': data['X_val'].shape,
-                'y_val': data['y_val'].shape,
-            }
-        }
-        
-        logger.info(f"Payload: {payload}")
-        # In production, this would make actual API calls
-        logger.info("Training job submitted (demo mode)")
-        
-        return "job_123456"
-    
-    def get_job_status(self, job_id: str) -> Dict[str, Any]:
+
+        try:
+            from tinker import types
+        except ImportError:
+            raise ImportError("tinker SDK not installed. Run: pip install tinker")
+
+        logger.info(f"Creating LoRA training client (rank={lora_rank}, model={self.base_model})...")
+        self.training_client = self.service_client.create_lora_training_client(
+            base_model=self.base_model,
+            rank=lora_rank,
+        )
+        logger.info("Training client ready")
+        return self.training_client
+
+    def get_tokenizer(self):
+        """Return the tokenizer for the loaded model (cached after first call)."""
+        if self.training_client is None:
+            raise RuntimeError("Call create_training_client() first")
+        if self._tokenizer is None:
+            self._tokenizer = self.training_client.get_tokenizer()
+        return self._tokenizer
+
+    def train_step(self, datums: List[Any], learning_rate: float = 1e-4) -> float:
         """
-        Get status of a training job.
-        
+        Run one forward-backward pass and optimizer step on a batch of datums.
+
+        Futures are submitted before calling .result() so that the optim step
+        can be pipelined with the fwdbwd computation on Tinker's side.
+
         Args:
-            job_id: Job ID
-            
+            datums: List of types.Datum objects for this batch
+            learning_rate: AdamW learning rate for this step
+
         Returns:
-            Job status information
+            Cross-entropy loss per completion token (float)
         """
-        logger.info(f"Fetching status for job {job_id}...")
-        # In production, this would query the API
-        return {'status': 'completed', 'accuracy': 0.85}
-    
-    def download_model(self, job_id: str, save_path: str):
+        if self.training_client is None:
+            raise RuntimeError("Call create_training_client() first")
+
+        from tinker import types
+
+        # Submit both requests before blocking on either result
+        fwdbwd_future = self.training_client.forward_backward(
+            data=datums,
+            loss_fn="cross_entropy",
+        )
+        optim_future = self.training_client.optim_step(
+            adam_params=types.AdamParams(learning_rate=learning_rate),
+        )
+
+        fwdbwd_result = fwdbwd_future.result()
+        optim_future.result()
+
+        # Compute mean cross-entropy loss over completion tokens
+        logprobs = np.concatenate([
+            output['logprobs'].to_numpy()
+            for output in fwdbwd_result.loss_fn_outputs
+        ])
+        weights = np.concatenate([
+            datum.loss_fn_inputs['weights'].to_numpy()
+            for datum in datums
+        ])
+        weight_sum = weights.sum()
+        loss = float(-np.dot(logprobs, weights) / weight_sum) if weight_sum > 0 else 0.0
+        return loss
+
+    def save_for_inference(self, name: str = 'fake-news-classifier') -> str:
         """
-        Download trained model from Tinker API.
-        
+        Save LoRA weights and create a sampling client for inference.
+
         Args:
-            job_id: Job ID
-            save_path: Path to save model
+            name: Human-readable name for this checkpoint
+
+        Returns:
+            Tinker URI of the saved weights (store this to reload later)
         """
-        logger.info(f"Downloading model from job {job_id} to {save_path}...")
-        # In production, this would download from API
-        logger.info("Model downloaded successfully")
+        if self.training_client is None:
+            raise RuntimeError("Call create_training_client() first")
+
+        logger.info(f"Saving weights as '{name}'...")
+        # Returns SamplingClient directly (not a Future)
+        self.sampling_client = self.training_client.save_weights_and_get_sampling_client(
+            name=name
+        )
+        uri = self.training_client.holder.get_session_id() + ':train:0'
+        logger.info(f"Weights saved. URI: {uri}")
+        return uri
+
+    # ── Inference ─────────────────────────────────────────────────────────────
+
+    def load_sampling_client(self, tinker_uri: str):
+        """
+        Load a previously saved checkpoint for inference without retraining.
+
+        Args:
+            tinker_uri: tinker:// URI returned by save_for_inference()
+        """
+        if self.service_client is None:
+            self.connect()
+
+        logger.info(f"Loading sampling client from {tinker_uri}...")
+        self.sampling_client = self.service_client.create_sampling_client(
+            base_model=tinker_uri
+        )
+        # get_tokenizer() on the sampling client tries to resolve the URI as a HF
+        # model ID — load from the known base model name instead
+        from transformers import AutoTokenizer
+        self._tokenizer = AutoTokenizer.from_pretrained(self.base_model)
+        logger.info("Sampling client loaded")
+
+    def predict(self, text: str, return_proba: bool = False):
+        """
+        Predict the truthfulness label for a single statement.
+
+        Args:
+            text: The political statement to classify
+            return_proba: If True, also return per-label log-probabilities
+
+        Returns:
+            Predicted label string, or (label, logprob_dict) if return_proba=True
+        """
+        if self.sampling_client is None:
+            raise RuntimeError("No sampling client. Call save_for_inference() or load_sampling_client() first")
+
+        from tinker import types
+
+        tokenizer = self._tokenizer or self.sampling_client.get_tokenizer()
+        prompt = self.prompt_template.format(text=text)
+        prompt_tokens = tokenizer.encode(prompt, add_special_tokens=True)
+        model_input = types.ModelInput.from_ints(tokens=prompt_tokens)
+
+        result = self.sampling_client.sample(
+            prompt=model_input,
+            num_samples=1,
+            sampling_params=types.SamplingParams(
+                max_tokens=10,
+                temperature=0.0,
+                stop=["\n", ".", ","],
+            ),
+        ).result()
+
+        generated = tokenizer.decode(result.sequences[0].tokens).strip().lower()
+
+        # Match to the nearest known label
+        predicted = self._match_label(generated)
+
+        if return_proba:
+            logprob_dict = self._compute_label_logprobs(model_input, tokenizer)
+            return predicted, logprob_dict
+
+        return predicted
+
+    def predict_batch(self, texts: List[str]) -> List[str]:
+        """Predict labels for a list of statements."""
+        return [self.predict(text) for text in texts]
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _match_label(self, generated: str) -> str:
+        """Match raw generated text to the closest known label."""
+        generated = generated.strip().lower()
+        for label in self.LABELS:
+            if label in generated:
+                return label
+        # Fallback: return closest prefix match
+        for label in self.LABELS:
+            if generated.startswith(label[:4]):
+                return label
+        logger.warning(f"Could not match generated text to label: {repr(generated)}")
+        return generated
+
+    def _compute_label_logprobs(self, prompt_input: Any, tokenizer) -> Dict[str, float]:
+        """
+        Compute the log-probability of each label token given the prompt.
+        Used for return_proba=True in predict().
+        """
+        from tinker import types
+
+        logprob_dict = {}
+        for label in self.LABELS:
+            completion = f" {label}"
+            completion_tokens = tokenizer.encode(completion, add_special_tokens=False)
+            full_input = types.ModelInput.from_ints(
+                tokens=prompt_input.to_ints() + completion_tokens
+            )
+            # compute_logprobs returns ConcurrentFuture[list[float | None]]
+            logprobs = self.sampling_client.compute_logprobs(full_input).result()
+            # Sum logprobs over completion token positions only (last N positions)
+            completion_logprob = float(sum(
+                lp for lp in logprobs[-len(completion_tokens):]
+                if lp is not None
+            ))
+            logprob_dict[label] = completion_logprob
+
+        return logprob_dict
+
+    def get_model_info(self) -> Dict[str, Any]:
+        """Return a summary of the current model state."""
+        return {
+            'base_model': self.base_model,
+            'type': 'TinkerClassifier (LoRA)',
+            'labels': self.LABELS,
+            'training_client': 'active' if self.training_client else 'none',
+            'sampling_client': 'active' if self.sampling_client else 'none',
+        }
 
 
 if __name__ == '__main__':
-    # Example usage
-    print("Model definitions loaded successfully")
-    
-    cb = ClassBalancer()
-    bert = BERTModel()
-    roberta = RoBERTaModel()
-    hybrid = HybridModel()
-    tinker = TinkerIntegration(api_key="test_key")
-    
-    print("\nAvailable models:")
-    print("- BERTModel")
-    print("- RoBERTaModel")
-    print("- HybridModel")
-    print("- TinkerIntegration")
+    print("Models module loaded. Available classes:")
+    print("  ClassBalancer")
+    print("  TinkerClassifier")

@@ -210,5 +210,108 @@ class ModelTrainer:
         return self.history
 
 
+class TinkerTrainer:
+    """Training loop for TinkerClassifier."""
+
+    def __init__(self, classifier, learning_rate: float = 1e-4, batch_size: int = 8):
+        """
+        Args:
+            classifier: TinkerClassifier instance with an active training_client
+            learning_rate: AdamW learning rate
+            batch_size: Number of datums per forward-backward call
+        """
+        self.classifier = classifier
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.history: Dict[str, list] = {'train_loss': [], 'val_loss': []}
+
+    def train_epoch(self, datums: list) -> float:
+        """
+        Run one full pass over the training datums in mini-batches.
+
+        Args:
+            datums: All training Datum objects for this epoch
+
+        Returns:
+            Mean loss over all batches
+        """
+        import math
+        np.random.shuffle(datums)
+
+        batch_losses = []
+        num_batches = math.ceil(len(datums) / self.batch_size)
+
+        for i in range(0, len(datums), self.batch_size):
+            batch = datums[i: i + self.batch_size]
+            loss = self.classifier.train_step(batch, learning_rate=self.learning_rate)
+            batch_losses.append(loss)
+            batch_num = i // self.batch_size + 1
+            if batch_num % 10 == 0 or batch_num == num_batches:
+                logger.info(f"  Batch {batch_num}/{num_batches}  loss={loss:.4f}")
+
+        epoch_loss = float(np.mean(batch_losses))
+        self.history['train_loss'].append(epoch_loss)
+        return epoch_loss
+
+    def evaluate_loss(self, datums: list) -> float:
+        """
+        Compute validation loss using forward-only passes (no gradient computation).
+
+        Args:
+            datums: Validation Datum objects
+
+        Returns:
+            Mean cross-entropy loss per completion token
+        """
+        import math
+
+        all_logprobs = []
+        all_weights = []
+
+        for i in range(0, len(datums), self.batch_size):
+            batch = datums[i: i + self.batch_size]
+            result = self.classifier.training_client.forward(
+                data=batch,
+                loss_fn="cross_entropy",
+            ).result()
+
+            for output, datum in zip(result.loss_fn_outputs, batch):
+                all_logprobs.extend(output['logprobs'].to_numpy().tolist())
+                all_weights.extend(datum.loss_fn_inputs['weights'].to_numpy().tolist())
+
+        all_logprobs = np.array(all_logprobs)
+        all_weights = np.array(all_weights)
+        weight_sum = all_weights.sum()
+        val_loss = float(-np.dot(all_logprobs, all_weights) / weight_sum) if weight_sum > 0 else 0.0
+        self.history['val_loss'].append(val_loss)
+        return val_loss
+
+    def train(self, train_datums: list, val_datums: list, epochs: int) -> Dict[str, list]:
+        """
+        Full training loop.
+
+        Args:
+            train_datums: Training Datum objects
+            val_datums: Validation Datum objects
+            epochs: Number of epochs
+
+        Returns:
+            Training history dict with 'train_loss' and 'val_loss' lists
+        """
+        logger.info(f"Starting Tinker training: {epochs} epochs, "
+                    f"{len(train_datums)} train / {len(val_datums)} val datums, "
+                    f"batch_size={self.batch_size}, lr={self.learning_rate}")
+
+        for epoch in range(1, epochs + 1):
+            logger.info(f"\nEpoch {epoch}/{epochs}")
+
+            train_loss = self.train_epoch(train_datums)
+            val_loss = self.evaluate_loss(val_datums)
+
+            logger.info(f"  Train loss: {train_loss:.4f}  |  Val loss: {val_loss:.4f}")
+
+        return self.history
+
+
 if __name__ == '__main__':
     print("Training utilities loaded successfully")

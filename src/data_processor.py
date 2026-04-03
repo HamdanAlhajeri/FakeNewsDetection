@@ -8,7 +8,7 @@ import numpy as np
 import re
 import nltk
 from sklearn.preprocessing import LabelEncoder
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Any
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -242,5 +242,73 @@ class DataProcessor:
         encoded_labels = self.encode_labels(df[label_column])
         
         logger.info("Data processing pipeline completed successfully")
-        
+
         return df, encoded_labels
+
+    @staticmethod
+    def prepare_tinker_datum(text: str, label: str, tokenizer: Any,
+                             prompt_template: str) -> Any:
+        """
+        Convert a single text/label pair into a Tinker Datum for cross-entropy training.
+
+        The prompt tokens receive weight 0 (model is not trained on them).
+        The completion tokens receive weight 1 (model is trained to predict them).
+        Tokens are shifted by one position for next-token prediction.
+
+        Args:
+            text: Input statement text
+            label: Truthfulness label string (e.g. 'false', 'half-true')
+            tokenizer: Tinker tokenizer from training_client.get_tokenizer()
+            prompt_template: Format string with {text} placeholder
+
+        Returns:
+            types.Datum ready for forward_backward()
+        """
+        from tinker import types, TensorData
+
+        prompt = prompt_template.format(text=text)
+        completion = f" {label}"
+
+        prompt_tokens = tokenizer.encode(prompt, add_special_tokens=True)
+        completion_tokens = tokenizer.encode(completion, add_special_tokens=False)
+
+        # Weight 0 = don't train on prompt, 1 = train on completion
+        weights = [0] * len(prompt_tokens) + [1] * len(completion_tokens)
+        all_tokens = prompt_tokens + completion_tokens
+
+        # Shift for next-token prediction: input[t] → target[t+1]
+        input_tokens = all_tokens[:-1]
+        target_tokens = all_tokens[1:]
+        weights = weights[1:]  # drop first weight (aligns with shifted targets)
+
+        return types.Datum(
+            model_input=types.ModelInput.from_ints(tokens=input_tokens),
+            loss_fn_inputs=dict(
+                weights=TensorData(data=weights, dtype='float32'),
+                target_tokens=TensorData(data=target_tokens, dtype='int64'),
+            )
+        )
+
+    @staticmethod
+    def prepare_tinker_dataset(texts: List[str], labels: List[str],
+                               tokenizer: Any, prompt_template: str) -> List[Any]:
+        """
+        Convert a list of texts and labels into Tinker Datums.
+
+        Args:
+            texts: List of input statements
+            labels: List of label strings matching TRUTHFULNESS_LABELS
+            tokenizer: Tinker tokenizer
+            prompt_template: Format string with {text} placeholder
+
+        Returns:
+            List of types.Datum objects
+        """
+        datums = []
+        for text, label in zip(texts, labels):
+            datum = DataProcessor.prepare_tinker_datum(
+                text, label, tokenizer, prompt_template
+            )
+            datums.append(datum)
+        logger.info(f"Prepared {len(datums)} Tinker datums")
+        return datums

@@ -1,6 +1,9 @@
 # Additional requirements for model training
 
-# Transformers and PyTorch for BERT/RoBERTa
+# Tinker SDK for LLM LoRA fine-tuning
+tinker
+
+# Transformers and PyTorch (kept for local/fallback BERT/RoBERTa path)
 torch>=2.0.0
 torchvision>=0.15.0
 transformers>=4.30.0

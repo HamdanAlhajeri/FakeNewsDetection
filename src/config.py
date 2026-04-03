@@ -16,12 +16,12 @@ RANDOM_SEED = 42
 
 # Truthfulness labels (6-class classification)
 TRUTHFULNESS_LABELS = {
-    0: 'true',
-    1: 'mostly-true',
+    0: 'barely-true',
+    1: 'false',
     2: 'half-true',
-    3: 'barely-true',
-    4: 'false',
-    5: 'pants-on-fire'
+    3: 'mostly-true',
+    4: 'pants-fire',
+    5: 'true'
 }
 
 # Reverse mapping
@@ -58,6 +58,62 @@ FILE_PATHS = {
     'model': ARTIFACTS_DIR / 'model.pkl',
     'model_weights': ARTIFACTS_DIR / 'model_weights.h5',
 }
+
+# Tinker LLM configuration
+
+TINKER_EXPERIMENTS = {
+    'v1': {
+        'note': 'baseline — overfit: train collapsed to 0.015, val rose to 0.56',
+        'base_model': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+        'lora_rank': 16,
+        'learning_rate': 1e-4,
+        'batch_size': 8,
+        'epochs': 3,
+        'max_inference_tokens': 10,
+        'temperature': 0.0,
+    },
+    'v2': {
+        'note': 'fix overfitting via lr only — keep rank for more headroom for middle ranks',
+        'base_model': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+        'lora_rank': 16,
+        'learning_rate': 2e-5,
+        'batch_size': 8,
+        'epochs': 6,
+        'max_inference_tokens': 10,
+        'temperature': 0.0,
+    },
+    'v3': {
+        'note': 'isolate rank effect — same lr as v2 but drop rank 16→8',
+        'base_model': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+        'lora_rank': 8,
+        'learning_rate': 2e-5,
+        'batch_size': 8,
+        'epochs': 3,
+        'max_inference_tokens': 10,
+        'temperature': 0.0,
+    },
+    'v4': {
+        'note': 'smaller batch (8→4) for noisier gradients — may help middle-class separation',
+        'base_model': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+        'lora_rank': 8,
+        'learning_rate': 2e-5,
+        'batch_size': 4,
+        'epochs': 6,
+        'max_inference_tokens': 10,
+        'temperature': 0.0,
+    },
+}
+
+ACTIVE_EXPERIMENT = 'v4'
+TINKER_CONFIG = TINKER_EXPERIMENTS[ACTIVE_EXPERIMENT]
+
+# Prompt template for classification — completion is " {label}"
+PROMPT_TEMPLATE = (
+    "Classify the truthfulness of the following political statement.\n\n"
+    "Statement: {text}\n\n"
+    "Choose exactly one label: barely-true, false, half-true, mostly-true, pants-fire, true\n\n"
+    "Label:"
+)
 
 # LIAR2 dataset info
 LIAR2_INFO = {

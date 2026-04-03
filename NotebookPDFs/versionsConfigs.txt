@@ -1,0 +1,10 @@
+V1: 
+TINKER_CONFIG = {
+    'base_model': 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'lora_rank': 16,
+    'learning_rate': 1e-4,
+    'batch_size': 8,
+    'epochs': 3,
+    'max_inference_tokens': 10,
+    'temperature': 0.0,
+}

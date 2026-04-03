@@ -1,0 +1,19 @@
+{
+  "tinker_llm": {
+    "base_model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+    "lora_rank": 16,
+    "tinker_uri": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+    "test_accuracy": 0.7190126050420168,
+    "test_macro_f1": 0.7202969293123439,
+    "train_loss_history": [
+      0.6426072337740176,
+      0.18540681545614257,
+      0.014988316417044713
+    ],
+    "val_loss_history": [
+      0.43948713197995115,
+      0.40839966334471767,
+      0.5607188295894713
+    ]
+  }
+}

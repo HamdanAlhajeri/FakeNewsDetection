@@ -21,8 +21,8 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Sphinx build output
-docs/_build/
+# Docs
+docs/
 
 # Jupyter checkpoints
 .ipynb_checkpoints/

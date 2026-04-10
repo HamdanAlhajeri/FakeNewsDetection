@@ -1,674 +1,634 @@
-# Fake News Detection - Complete Project Guide
+# Fake News Detection
 
-A production-ready machine learning system for multi-class fake news detection using the LIAR2 dataset with BERT, RoBERTa, and Hybrid ensemble models.
-
-**Latest Status**: Training infrastructure complete with Tinker API integration for distributed GPU training ✓
-
----
-
-## Table of Contents
-
-1. [Project Overview](#project-overview)
-2. [What Has Been Completed](#what-has-been-completed)
-3. [Project Architecture](#project-architecture)
-4. [Quick Start](#quick-start)
-5. [Detailed Workflow](#detailed-workflow)
-6. [Configuration](#configuration)
-7. [What Needs to Be Done](#what-needs-to-be-done)
-8. [Technical Details](#technical-details)
-9. [Troubleshooting](#troubleshooting)
+A 6-class political statement truthfulness classifier built on the LIAR2 dataset.
+Uses the Tinker API to LoRA fine-tune **NVIDIA Nemotron 30B** on remote GPU infrastructure —
+no local GPU required.
 
 ---
 
-## Project Overview
+## How It Works
 
-### Mission
+### Overview
 
-Build and deploy a classifier that labels short political statements into 6 truthfulness categories:
-- `true`
-- `mostly-true`
-- `half-true`
-- `barely-true`
-- `false`
-- `pants-on-fire`
+The system classifies political statements into one of six truthfulness labels:
 
-### Dataset
+| Label | Meaning |
+|---|---|
+| `true` | Accurate and fully supported |
+| `mostly-true` | Mostly accurate with minor omissions |
+| `half-true` | Partially accurate but leaves out key facts |
+| `barely-true` | Contains a grain of truth but is mostly misleading |
+| `false` | Factually inaccurate |
+| `pants-fire` | Egregiously false ("pants on fire") |
 
-**LIAR2 - Enhanced Fact-Checking Benchmark**
-- ~23,000 professionally fact-checked political statements
-- 6 balanced truthfulness labels
-- Professional annotations from PolitiFact
-- Includes metadata (speaker, location, context)
+### Dataset — LIAR2
 
-### Models
+[LIAR2](https://www.cs.ucsb.edu/~william/liar.html) is a benchmark of ~23,000 professionally
+fact-checked political statements sourced from PolitiFact. Each record contains:
 
-| Model | Architecture | Params | Best For |
-|-------|--------------|--------|----------|
-| **BERT** | 12-layer transformer | 110M | General understanding |
-| **RoBERTa** | 12-layer transformer (robust) | 125M | Robust representations |
-| **Hybrid Ensemble** | BERT + RoBERTa (50/50) | 235M | Best performance |
+- The statement text
+- Speaker name, job title, party affiliation
+- Topic subject and geographic context
+- Historical credibility counts for that speaker (how many times they have been rated each label)
 
----
+The dataset ships as three TSV files with no header row:
 
-## What Has Been Completed
-
-### ✅ Phase 1: Data Pipeline (100% Complete)
-
-**Notebook**: `notebooks/01_data_loading_cleaning_encoding.ipynb`
-
-**Implemented**:
-- Load LIAR2 TSV dataset with proper column mapping
-- Text normalization (lowercase, URL/email removal, special character cleaning)
-- Optional stopword removal
-- Label encoding (string → 0-5 numeric)
-- Vocabulary building with frequency filtering
-- Sequence encoding (text → word indices)
-- Sequence padding (fixed-length 100 tokens)
-- Data caching for repeated use
-
-**Output Artifacts**:
-- `artifacts/encoded_data.npz` - Padded sequences (X) and encoded labels (y)
-- `artifacts/processed_data.csv` - Cleaned dataset with processed text
-- `artifacts/processor.pkl` - Serialized DataProcessor for inference
-
-### ✅ Phase 2: Training Infrastructure (100% Complete)
-
-**Notebook**: `notebooks/02_model_training.ipynb`
-
-**Implemented**:
-- Class balancing (RandomOverSampler for minority classes)
-- Stratified data splitting (70% train / 15% val / 15% test)
-- BERT model initialization (bert-base-uncased)
-- RoBERTa model initialization (roberta-base)
-- Hybrid ensemble setup (configurable weights)
-- Tinker API configuration template
-- Training hyperparameter configuration
-
-**Output Artifacts**:
-- `artifacts/data_splits.npz` - Train/val/test splits with labels
-- Model instances ready for fine-tuning
-
-### ✅ Phase 3: Training Execution (100% Complete)
-
-**Notebook**: `notebooks/03_training_execution.ipynb`
-
-**Implemented - Local Training Path**:
-- Device detection (CUDA/CPU with fallback)
-- BERT fine-tuning loop (configurable epochs)
-- RoBERTa fine-tuning loop (parallel training)
-- Validation after each epoch
-- Loss, accuracy, and Macro-F1 tracking
-- Model checkpoint saving
-
-**Implemented - Tinker API Path**:
-- Automatic Tinker API detection from `.env`
-- Job submission for BERT and RoBERTa (parallel)
-- Job status monitoring with polling
-- Automatic model download after completion
-- Falls back to local training if API not configured
-
-**Evaluation**:
-- Test set evaluation for both models
-- Hybrid ensemble creation (weighted average)
-- Per-class classification reports
-- Confusion matrices with visualization
-- Model comparison table
-
-**Output Artifacts**:
-- `artifacts/bert_model.pt` - Fine-tuned BERT checkpoint
-- `artifacts/roberta_model.pt` - Fine-tuned RoBERTa checkpoint
-- `artifacts/training_results.json` - Training history and metrics
-
-### ✅ Phase 4: Inference API (100% Complete)
-
-**Script**: `src/predict.py`
-
-**Implemented**:
-- Single text prediction with confidence scores
-- Batch prediction for multiple texts
-- Model checkpoint loading
-- GPU/CPU support
-- Command-line interface
-- Python API interface
-
-**Usage**:
-```bash
-# Single prediction
-python src/predict.py --text "The president announced new policies"
-
-# Batch from file
-python src/predict.py --file data/statements.txt
-
-# With confidence scores
-python src/predict.py --text "Statement" --proba
-
-# GPU inference
-python src/predict.py --text "Statement" --device cuda
+```
+data/train.tsv   (~10,269 samples)
+data/valid.tsv   (~1,284  samples)
+data/test.tsv    (~1,283  samples)
 ```
 
-### ✅ Phase 5: Core Python Module (100% Complete)
+### Feature Engineering
 
-**Module Structure**:
+Each sample is transformed into a single rich text string before being fed to the model.
+Six text features are concatenated:
 
-| File | Purpose | Status |
-|------|---------|--------|
-| `src/data_processor.py` | Data loading, cleaning, encoding | ✓ Complete |
-| `src/models.py` | BERT, RoBERTa, Hybrid, Tinker integration | ✓ Complete |
-| `src/training_utils.py` | Data splitting, metrics, trainer base class | ✓ Complete |
-| `src/config.py` | Centralized configuration, labels, seeds | ✓ Complete |
-| `src/predict.py` | Inference API and CLI | ✓ Complete |
+```
+Statement: <cleaned statement text>
+Speaker:   <speaker name>
+Party:     <party affiliation>
+Job:       <job title>
+Subject:   <topic area>
+Context:   <location / context>
+```
+
+On top of that, a **speaker credibility score** is derived from the historical count columns
+and appended automatically:
+
+```
+Speaker history: 473 prior claims — mostly-true: 34%, half-true: 34%,
+false: 15%, barely-true: 15%, pants-fire: 2%. Most common rating: mostly-true
+```
+
+This gives the model explicit signal about each speaker's track record rather than
+requiring it to infer credibility from a name alone. Speakers with no history are
+silently skipped.
+
+**Text cleaning** applied to all fields before concatenation:
+- Lowercase
+- Strip URLs and email addresses
+- Remove special characters (keep alphanumeric and spaces)
+- Remove English stopwords (NLTK)
+
+### Model — Nemotron 30B + LoRA via Tinker
+
+The model is `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`, a 30-billion-parameter
+instruction-tuned LLM. Fine-tuning is done using **LoRA** (Low-Rank Adaptation) via the
+Tinker API, which runs on Tinker's remote GPU infrastructure.
+
+**How the classification works:**
+
+Each sample is formatted as a completion prompt:
+
+```
+Classify the truthfulness of the following political statement and its context.
+
+Statement: hillary clinton agrees john mccain voting give george bush ...
+Speaker: barack obama  Party: democrat  Job: president  Subject: foreign-policy
+Context: denver
+Speaker history: 473 prior claims — mostly-true: 34%, half-true: 34%, ...
+
+Choose exactly one label: barely-true, false, half-true, mostly-true, pants-fire, true
+
+Label:
+```
+
+The model is trained to complete this prompt with the correct label (e.g. `" half-true"`).
+During inference, the model generates a label token and it is matched to the nearest
+known label.
+
+**LoRA training setup (v3 config — current best):**
+
+| Parameter | Value |
+|---|---|
+| Base model | nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 |
+| LoRA rank | 8 |
+| Learning rate | 2e-5 |
+| Batch size | 8 |
+| Epochs | 3 |
+| Optimizer | AdamW |
+
+### Training Flow
+
+```
+LIAR2 TSV files
+    ↓
+DataProcessor.load_data()        — parse TSV with named columns
+    ↓
+DataProcessor.process()          — clean text + build_input_text + encode labels
+    ↓
+DataProcessor._speaker_history() — derive credibility stats from count columns
+    ↓
+TinkerClassifier.connect()       — connect to Tinker API
+    ↓
+create_training_client()         — allocate LoRA training resources (rank=8)
+    ↓
+DataProcessor.prepare_tinker_dataset() — tokenize + build Datum objects
+    ↓
+TinkerTrainer.train()            — mini-batch forward-backward + AdamW steps
+    ↓
+TinkerClassifier.save_for_inference() — save LoRA weights, get URI
+    ↓
+Evaluate on test set             — predict each sample, compute metrics
+    ↓
+Save artifacts                   — results.json, loss_curve.png, confusion_matrix.png
+```
 
 ---
 
-## Project Architecture
+## Preprocessing
+
+### Why It Is a Separate Step
+
+Preprocessing is run once and its output is saved to disk. Every subsequent training run
+reads those saved files directly, skipping all cleaning and feature engineering. This means
+you can retrain with different hyperparameters as many times as you like without repeating
+the same work. If you change the features or cleaning logic, you re-run preprocessing once
+and all future training runs automatically use the new version.
+
+```
+python src/preprocessing.py   ← run once
+python src/train.py           ← run as many times as needed
+```
+
+### What Preprocessing Produces
+
+Three tab-separated files, one per data split:
+
+```
+artifacts/preprocessed_train.tsv   (10,269 rows)
+artifacts/preprocessed_val.tsv     (1,284  rows)
+artifacts/preprocessed_test.tsv    (1,283  rows)
+```
+
+Each file has exactly two columns with a header row:
+
+| Column | Content |
+|---|---|
+| `text` | The fully cleaned and combined input string ready for the model |
+| `label` | The truthfulness label string, e.g. `false` |
+
+### Step-by-Step Walkthrough
+
+The entire preprocessing pipeline lives in `src/data_processor.py` inside the
+`DataProcessor` class. `src/preprocessing.py` calls into it and handles saving.
+
+---
+
+#### Step 1 — Load the raw TSV (`DataProcessor.load_data`)
+
+The LIAR2 TSV files have no header row, so column names are assigned explicitly from
+`TSV_COLUMNS` in `config.py`. The 14 columns in order are:
+
+```
+id, label, statement, subject, speaker, job_title, state_info,
+party_affiliation, barely_true_count, false_count, half_true_count,
+mostly_true_count, pants_on_fire_count, context
+```
+
+Malformed lines (wrong number of columns) are silently skipped. Any row missing a
+`label` or `statement` value is dropped immediately before any further processing.
+The `label` column is lowercased and stripped of whitespace.
+
+**Raw input example (one row of train.tsv):**
+```
+2635.json  false  Says the Annies List political group supports
+           third-trimester abortions on demand.  abortion
+           dwayne-bohac  State representative  Texas  republican
+           0  1  0  0  0  a mailer
+```
+
+---
+
+#### Step 2 — Clean each text field (`DataProcessor.clean_text`)
+
+`clean_text` is applied independently to every text field before they are combined.
+The transformations happen in this exact order:
+
+1. **Lowercase** — `"Says the Annies List..."` → `"says the annies list..."`
+2. **Strip URLs** — removes anything matching `http://`, `https://`, or `www.`
+3. **Strip email addresses** — removes anything matching `word@word` patterns
+4. **Remove special characters** — replaces everything that is not a letter, digit,
+   or space with a space. Punctuation, quotes, hyphens, apostrophes are all removed.
+5. **Remove English stopwords** — common words like `the`, `is`, `a`, `on`, `of`
+   are removed using the NLTK English stopwords list (179 words). This reduces noise
+   and shortens sequences without losing meaning-bearing content.
+
+If a field is null, not a string, or becomes empty after cleaning, it is silently
+skipped — no error, no placeholder.
+
+**Example — cleaning the statement field:**
+```
+Before: "Says the Annies List political group supports third-trimester abortions on demand."
+After:  "says annies list political group supports third trimester abortions demand"
+```
+
+---
+
+#### Step 3 — Derive speaker credibility history (`DataProcessor._speaker_history`)
+
+The LIAR2 dataset contains five columns that record how many times each speaker has
+previously received each truthfulness rating:
+
+| Column | Rating |
+|---|---|
+| `barely_true_count` | barely-true |
+| `false_count` | false |
+| `half_true_count` | half-true |
+| `mostly_true_count` | mostly-true |
+| `pants_on_fire_count` | pants-fire |
+
+These counts are summed to get the speaker's total number of prior fact-checked claims.
+Each rating is then expressed as a percentage of that total. The result is sorted
+from most frequent to least frequent so the most characteristic pattern appears first.
+
+This gives the model explicit, structured signal about each speaker's credibility track
+record. Without it, the model can only infer trustworthiness from a name — with it,
+the model is directly told that this speaker is rated `false` 40% of the time.
+
+**Example — Barack Obama row:**
+```
+Counts:  mostly_true=163, half_true=160, false=71, barely_true=70, pants_on_fire=9
+Total:   473 claims
+
+Output:  "Speaker history: 473 prior claims — mostly-true: 34%, half-true: 34%,
+          false: 15%, barely-true: 15%, pants-fire: 2%. Most common rating: mostly-true"
+```
+
+Speakers with all-zero counts (no prior history) produce an empty string and the
+speaker history segment is omitted entirely from that sample's input.
+
+---
+
+#### Step 4 — Combine all features (`DataProcessor.build_input_text`)
+
+All six text feature columns are cleaned (Step 2) and concatenated into a single
+string with a descriptive prefix for each field:
+
+```
+Statement: <cleaned statement>
+Speaker:   <cleaned speaker name>
+Party:     <cleaned party affiliation>
+Job:       <cleaned job title>
+Subject:   <cleaned subject>
+Context:   <cleaned context>
+```
+
+The speaker history string from Step 3 is then appended at the end. Fields that are
+null or empty after cleaning are simply omitted — there is no blank placeholder.
+
+**Full combined output for the example row:**
+```
+Statement: says annies list political group supports third trimester abortions demand
+Speaker: dwayne bohac Party: republican Job: state representative Subject: abortion
+Context: mailer Speaker history: 1 prior claims — false: 100%. Most common rating: false
+```
+
+This single string is what gets written to the `text` column of the preprocessed TSV
+and what the model receives as its input at training and inference time.
+
+---
+
+#### Step 5 — Encode labels (`DataProcessor.encode_labels`)
+
+Label strings are mapped to integer indices using the fixed alphabetical ordering
+defined in `config.py`:
+
+| Index | Label |
+|---|---|
+| 0 | barely-true |
+| 1 | false |
+| 2 | half-true |
+| 3 | mostly-true |
+| 4 | pants-fire |
+| 5 | true |
+
+The integer indices are used internally for metric computation (confusion matrix,
+F1 scores). The `label` column in the preprocessed TSV keeps the original string
+form so the files remain human-readable.
+
+---
+
+#### Step 6 — Save to TSV (`preprocessing.py`)
+
+After all rows have been processed, the combined text and label string are written
+to a tab-separated file with a header row. Any row whose combined text is still
+empty after all cleaning steps is dropped at this point.
+
+The three output files mirror the original train/val/test split structure so that
+`train.py` can load them with a single `pd.read_csv(path, sep='\t')` call.
+
+---
+
+### Concrete Before / After Example
+
+**Raw TSV row (train.tsv):**
+```
+324.json  mostly-true  Hillary Clinton agrees with John McCain "by voting
+to give George Bush the benefit of the doubt on Iran."  foreign-policy
+barack-obama  President  Illinois  democrat  70  71  160  163  9  Denver
+```
+
+**After preprocessing (one row of preprocessed_train.tsv):**
+```
+text                                                                    label
+Statement: hillary clinton agrees john mccain voting give george bush   mostly-true
+benefit doubt iran Subject: foreign policy Speaker: barack obama
+Party: democrat Job: president Context: denver Speaker history: 473
+prior claims — mostly-true: 34%, half-true: 34%, false: 15%,
+barely-true: 15%, pants-fire: 2%. Most common rating: mostly-true
+```
+
+---
+
+## Results
+
+Trained with the v3 configuration (rank=8, lr=2e-5, batch=8, epochs=3):
+
+| Metric | Value |
+|---|---|
+| Test Accuracy | **71.59%** |
+| Macro F1 | **0.717** |
+| Weighted F1 | — |
+
+**Loss progression over 3 epochs:**
+
+| Epoch | Train Loss | Val Loss |
+|---|---|---|
+| 1 | 0.732 | 0.606 |
+| 2 | 0.420 | 0.440 |
+| 3 | 0.117 | 0.474 |
+
+The gap between train and val loss at epoch 3 indicates mild overfitting — the model
+has learned the training distribution well but generalises with some degradation. The
+v4 experiment (smaller batch size = noisier gradients) was designed to address this.
+
+---
+
+## Project Structure
 
 ```
 FakeNewsDetection/
-├── notebooks/                          # Jupyter execution files
-│   ├── 01_data_loading_cleaning_encoding.ipynb   # Data pipeline
-│   ├── 02_model_training.ipynb                   # Training setup
-│   └── 03_training_execution.ipynb               # Training + Evaluation
+├── src/
+│   ├── config.py           — all constants: labels, Tinker config, paths, feature columns
+│   ├── data_processor.py   — DataProcessor: load, clean, feature engineering, Tinker datums
+│   ├── preprocessing.py    — run once: processes raw TSVs and saves preprocessed TSVs
+│   ├── models.py           — TinkerClassifier: connect, train, save, predict
+│   ├── training_utils.py   — TinkerTrainer, MetricsCalculator, plotting, save_results
+│   ├── train.py            — training entry point (loads preprocessed TSVs, trains)
+│   └── predict.py          — inference entry point + TinkerPredictor class
 │
-├── src/                                # Python modules (production code)
-│   ├── __init__.py
-│   ├── config.py                      # Configuration & constants
-│   ├── data_processor.py              # Data ETL pipeline
-│   ├── models.py                      # Model definitions & Tinker API
-│   ├── training_utils.py              # Training helpers
-│   └── predict.py                     # Inference API
+├── data/
+│   ├── train.tsv           — ~10,269 raw training samples
+│   ├── valid.tsv           — ~1,284  raw validation samples
+│   └── test.tsv            — ~1,283  raw test samples
 │
-├── data/                              # Raw LIAR2 dataset (download here)
-├── artifacts/                         # Generated files
-│   ├── encoded_data.npz              # Processed sequences
-│   ├── data_splits.npz               # Train/val/test splits
-│   ├── processed_data.csv            # Cleaned text
-│   ├── processor.pkl                 # Serialized processor
-│   ├── bert_model.pt                 # Trained BERT
-│   ├── roberta_model.pt              # Trained RoBERTa
-│   └── training_results.json         # Metrics & history
+├── artifacts/
+│   ├── preprocessed_train.tsv   — cleaned + combined training data (text, label)
+│   ├── preprocessed_val.tsv     — cleaned + combined validation data
+│   ├── preprocessed_test.tsv    — cleaned + combined test data
+│   ├── runs/                    — one JSON file per training run
+│   ├── runs_registry.json       — index of all training runs with metrics
+│   ├── tinker_weights_uri.txt   — URI of the most recent training run
+│   ├── training_results.json    — loss history + test metrics (latest run)
+│   ├── loss_curve.png           — train/val loss per epoch
+│   └── confusion_matrix.png     — per-class prediction breakdown
 │
-├── requirements.txt                   # Basic dependencies
-├── requirements_models.txt            # Model training deps
-├── .env.example                       # Environment template
-└── README.md                          # This file
+├── notebooks/
+│   ├── 01_data_loading_cleaning_encoding.ipynb
+│   ├── 02_model_training.ipynb
+│   └── 03_training_execution.ipynb
+│
+├── requirements.txt         — core dependencies (pandas, sklearn, nltk, matplotlib)
+└── requirements_models.txt  — model dependencies (torch, transformers, tinker)
 ```
 
 ---
 
-## Quick Start
+## Setup
 
-### 1. Install Dependencies
+### 1. Install dependencies
 
 ```bash
-# Core dependencies
 pip install -r requirements.txt
-
-# Model training (BERT, RoBERTa)
 pip install -r requirements_models.txt
 ```
 
-### 2. Download LIAR2 Dataset
+### 2. Set your Tinker API key
 
-```bash
-# Download from official source
-# https://www.cs.ucsb.edu/~william/liar.html
+Create a `.env` file in the project root:
 
-# Extract to data/ directory
-# Expected structure: data/train.csv, data/val.csv, data/test.csv
+```env
+TINKER_API_KEY=your_key_here
 ```
 
-### 3. Run Data Pipeline
+`train.py` and `predict.py` load this file automatically via `python-dotenv` before
+connecting to Tinker. No need to set environment variables manually.
 
-```bash
-jupyter notebook notebooks/01_data_loading_cleaning_encoding.ipynb
-# Run all cells - generates artifacts/encoded_data.npz
+### 3. Verify the data files exist
+
 ```
-
-### 4. Setup Training (Choose One)
-
-**Option A: Local Training (CPU/GPU)**
-```bash
-jupyter notebook notebooks/02_model_training.ipynb
-jupyter notebook notebooks/03_training_execution.ipynb
-# Training runs on your machine (~15-30 min on GPU)
-```
-
-**Option B: Tinker API (Distributed GPU)**
-```bash
-# Create .env file with Tinker API key
-cp .env.example .env
-# Edit .env and add your TINKER_API_KEY
-
-# Run training notebooks
-jupyter notebook notebooks/02_model_training.ipynb
-jupyter notebook notebooks/03_training_execution.ipynb
-# Jobs submitted to Tinker, runs on their infrastructure
-```
-
-### 5. Test Predictions
-
-```bash
-python src/predict.py --text "The president announced new economic policies"
-# Output: Label: false, Confidence: 78%
+data/train.tsv
+data/valid.tsv
+data/test.tsv
 ```
 
 ---
 
-## Detailed Workflow
+## How to Train
 
-### Data Processing Workflow
+### Step 1 — Preprocess (once)
 
-```
-Raw LIAR2 TSV
-    ↓
-Load & Explore
-    ↓
-Clean Text (URLs, punctuation, normalization)
-    ↓
-Remove Stopwords (optional)
-    ↓
-Build Vocabulary (word→index mapping)
-    ↓
-Encode Sequences (text→indices, pad to 100 tokens)
-    ↓
-Encode Labels (string→0-5 integer)
-    ↓
-Save Artifacts (.npz, .csv, .pkl)
+```bash
+python src/preprocessing.py
 ```
 
-### Training Workflow (Local)
+Reads the raw TSV files, applies all cleaning and feature engineering, and saves
+three preprocessed TSVs to `artifacts/`. Only needs to be re-run if you change
+the raw data or modify the cleaning / feature logic.
 
-```
-Load Processed Data
-    ↓
-Balance Classes (oversampling)
-    ↓
-Split Data (70/15/15 stratified)
-    ↓
-Initialize Models
-    ├─ BERT (bert-base-uncased)
-    └─ RoBERTa (roberta-base)
-    ↓
-Fine-tune BERT
-    ├─ 2-5 epochs
-    ├─ Batch size: 16
-    ├─ Learning rate: 2e-5
-    └─ Warmup: 500 steps
-    ↓
-Fine-tune RoBERTa
-    ├─ 2-5 epochs
-    ├─ Batch size: 16
-    ├─ Learning rate: 1e-5
-    └─ Warmup: 500 steps
-    ↓
-Evaluate on Test Set
-    ├─ BERT metrics
-    ├─ RoBERTa metrics
-    └─ Hybrid metrics (50/50 ensemble)
-    ↓
-Save Models & Results
-    ├─ bert_model.pt
-    ├─ roberta_model.pt
-    └─ training_results.json
+### Step 2 — Train (as many times as needed)
+
+```bash
+python src/train.py
 ```
 
-### Training Workflow (Tinker API)
+What this does:
+1. Loads the preprocessed TSVs from `artifacts/` (no cleaning or feature work)
+2. Connects to the Tinker API and allocates a LoRA training session
+3. Tokenises all samples into Tinker Datum objects
+4. Runs 3 epochs of mini-batch LoRA fine-tuning
+5. Saves the LoRA weights and records the URI
+6. Predicts all test samples and computes metrics
+7. Saves `training_results.json`, `loss_curve.png`, `confusion_matrix.png`
+8. Appends this run to `artifacts/runs_registry.json`
 
+Training takes roughly **1–3 hours** depending on Tinker queue and dataset size.
+Progress is printed every 50 batches and at the end of each epoch.
+
+---
+
+## How to Predict
+
+After training, the weights URI is stored in `artifacts/tinker_weights_uri.txt`.
+The predict script reads it automatically.
+
+**Single statement:**
+```bash
+python src/predict.py --text "The unemployment rate dropped to 3 percent under my administration."
 ```
-Load Processed Data
-    ↓
-Prepare Training Config
-    ├─ Model: BERT or RoBERTa
-    ├─ Epochs: configurable
-    ├─ Batch size: 16
-    └─ Learning rate: tuned
-    ↓
-Submit to Tinker API
-    ├─ BERT job submission
-    ├─ RoBERTa job submission (parallel)
-    └─ Receive job IDs
-    ↓
-Monitor Job Status
-    ├─ Poll every 60 seconds
-    ├─ Display progress
-    └─ Wait for completion (up to 3 hours)
-    ↓
-Download Models from Tinker
-    ├─ bert_model.pt
-    └─ roberta_model.pt
-    ↓
-Evaluate Locally
-    ├─ Load downloaded models
-    ├─ Test set evaluation
-    └─ Generate reports
+
+**With per-label log-probabilities:**
+```bash
+python src/predict.py --text "..." --proba
+```
+
+**Predict from a CSV or TSV file:**
+```bash
+python src/predict.py --file statements.csv --col statement
+python src/predict.py --file statements.tsv --col text --out results.tsv
+```
+
+**List all saved training runs:**
+```bash
+python src/predict.py --list-runs
+```
+
+**Use a specific past run:**
+```bash
+python src/predict.py --run run_20260407_143022 --text "..."
+```
+
+**Explicit URI:**
+```bash
+python src/predict.py --uri 1731a955-6aca-5d6a-a18f-b3914a1e4b47:train:0 --text "..."
+```
+
+**Example output:**
+```
+Loaded model from URI: 1731a955-6aca-5d6a-a18f-b3914a1e4b47:train:0
+
+Text:       The unemployment rate dropped to 3 percent under my administration.
+Prediction: mostly-true
+
+Per-label log-probabilities:
+  mostly-true    -0.3821
+  half-true      -1.2044
+  true           -1.8732
+  barely-true    -3.1209
+  false          -4.5512
+  pants-fire     -6.2103
 ```
 
 ---
 
 ## Configuration
 
-### Environment Variables (.env)
-
-Create a `.env` file in the project root (copy from `.env.example`):
-
-```env
-# Tinker API (Optional - for distributed training)
-TINKER_API_KEY=your_actual_api_key_from_tinker
-TINKER_API_URL=https://api.tinker.thinkingmachines.ai
-TINKER_PROJECT_ID=your_project_id
-
-# Training (Optional - for custom settings)
-TRAINING_EPOCHS=5
-TRAINING_BATCH_SIZE=16
-BERT_LEARNING_RATE=2e-5
-ROBERTA_LEARNING_RATE=1e-5
-```
-
-**Get Tinker API Key**:
-1. Sign up at https://tinker.thinkingmachines.ai
-2. Create API token in dashboard
-3. Add to `.env` file
-
-### Code Configuration
-
-Edit in `src/config.py`:
+All tunable parameters live in `src/config.py`.
 
 ```python
-# Training parameters
-RANDOM_SEED = 42
-TRUTHFULNESS_LABELS = {
-    0: 'true',
-    1: 'mostly-true',
-    2: 'half-true',
-    3: 'barely-true',
-    4: 'false',
-    5: 'pants-on-fire'
+# Tinker / LoRA
+TINKER_CONFIG = {
+    'base_model':   'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
+    'lora_rank':    8,       # higher = more trainable params
+    'learning_rate': 2e-5,
+    'batch_size':   8,
+    'epochs':       3,
 }
 
-# Paths
-DATA_DIR = Path('../data')
-ARTIFACTS_DIR = Path('../artifacts')
-```
+# Prompt template — {text} is the full combined feature string
+PROMPT_TEMPLATE = (
+    "Classify the truthfulness of the following political statement "
+    "and its context.\n\n"
+    "{text}\n\n"
+    "Choose exactly one label: barely-true, false, half-true, "
+    "mostly-true, pants-fire, true\n\n"
+    "Label:"
+)
 
-Edit in notebooks for hyperparameters:
-
-```python
-# Notebook cell - adjustable per run
-BERT_CONFIG = {
-    'batch_size': 16,
-    'epochs': 5,           # Increase for better accuracy
-    'learning_rate': 2e-5, # Lower for more stable training
-    'warmup_steps': 500,
-}
+# Which text columns to concatenate into the model input
+FEATURE_COLS = ['statement', 'speaker', 'job_title',
+                'party_affiliation', 'subject', 'context']
 ```
 
 ---
 
-## What Needs to Be Done
+## Module Reference
 
-### 🔄 Short Term (Next 1-2 weeks)
+### `src/preprocessing.py`
 
-| Task | Priority | Effort | Details |
-|------|----------|--------|---------|
-| **Run training & collect metrics** | **CRITICAL** | 1-2 hours | Execute notebooks, verify accuracy > 65% |
-| Optimize hyperparameters | High | 4-8 hours | Test different learning rates, epochs, batch sizes |
-| Fine-tune ensemble weights | High | 2-4 hours | Experiment with different BERT/RoBERTa ratios |
-| Add data augmentation | Medium | 4-6 hours | Implement synonym replacement, back-translation |
+| Function | Description |
+|---|---|
+| `run_and_save()` | Runs the full preprocessing pipeline and writes the three preprocessed TSVs |
+| `_process_and_save(raw_path, out_path)` | Processes one split: loads, cleans, combines features, saves |
 
-### 📊 Medium Term (2-4 weeks)
-
-| Task | Priority | Effort | Details |
-|------|----------|--------|---------|
-| Fairness analysis | High | 6-8 hours | Evaluate model performance by speaker, topic, date |
-| Adversarial robustness | Medium | 8-12 hours | Test against intentional misinformation patterns |
-| Cross-dataset evaluation | Medium | 4-6 hours | Test on other fake news datasets (FEVER, etc.) |
-| Model compression | Low | 6-10 hours | Distill to smaller models for edge deployment |
-
-### 🚀 Long Term (1-2 months)
-
-| Task | Priority | Effort | Details |
-|------|----------|--------|---------|
-| Production API | High | 1-2 weeks | FastAPI/Flask service with batch endpoint |
-| Web interface | Medium | 1-2 weeks | React app for demo (or Streamlit) |
-| Explainability | Medium | 1-2 weeks | LIME/SHAP integration for model interpretability |
-| Continuous monitoring | Medium | 1 week | Track model drift, retraining triggers |
-| Docker containerization | High | 1 week | Package for cloud deployment |
-| CI/CD pipeline | Medium | 1 week | GitHub Actions for automated testing |
-
-### 🏗️ Infrastructure
-
-- [ ] Deploy to cloud (AWS, GCP, Azure)
-- [ ] Setup monitoring & logging (CloudWatch, DataDog)
-- [ ] Database for results & predictions
-- [ ] Model versioning & registry
-- [ ] A/B testing framework
+Run as a script: `python src/preprocessing.py`
 
 ---
 
-## Technical Details
+### `src/data_processor.py` — DataProcessor
 
-### Dependencies
+| Method | Description |
+|---|---|
+| `load_data(filepath)` | Load a LIAR2 TSV file into a DataFrame |
+| `clean_text(text)` | Lowercase, strip URLs/emails/special chars, remove stopwords |
+| `_speaker_history(row)` | Derive credibility stats from count columns |
+| `build_input_text(row)` | Combine all features + speaker history into one string |
+| `encode_labels(labels)` | Map label strings to 0–5 integer indices |
+| `process(df)` | Full pipeline: returns `(texts, label_indices)` |
+| `prepare_tinker_datum(text, label, tokenizer, template)` | Build a single Tinker Datum |
+| `prepare_tinker_dataset(texts, labels, tokenizer, template)` | Build all Tinker Datums |
 
-**Core**:
-```
-pandas>=1.3.0
-numpy>=1.21.0
-scikit-learn>=0.24.0
-matplotlib>=3.3.0
-seaborn>=0.11.0
-```
+### `src/models.py` — TinkerClassifier
 
-**Model Training**:
-```
-torch>=2.0.0
-transformers>=4.30.0
-python-dotenv>=0.19.0
-imbalanced-learn>=0.9.0
-tqdm>=4.62.0
-```
+| Method | Description |
+|---|---|
+| `connect()` | Connect to Tinker API (reads `TINKER_API_KEY` from env) |
+| `create_training_client(lora_rank)` | Allocate LoRA training session |
+| `get_tokenizer()` | Get model tokenizer (cached) |
+| `train_step(datums, learning_rate)` | One forward-backward + AdamW step |
+| `save_for_inference(name)` | Save LoRA weights, returns URI string |
+| `load_sampling_client(uri)` | Load a saved checkpoint for inference |
+| `predict(text, ...)` | Predict label for one statement |
+| `predict_batch(texts)` | Predict labels for a list of statements |
 
-### Model Architecture
+### `src/training_utils.py`
 
-**BERT (Bidirectional Encoder Representations from Transformers)**
-- Architecture: 12-layer transformer, 768 hidden units, 12 attention heads
-- Tokenizer: WordPiece
-- Input: Token IDs, Token Type IDs, Attention Masks
-- Output: [CLS] token logits for classification
-- Parameters: 110M
-
-**RoBERTa (Robustly Optimized BERT Pretraining)**
-- Architecture: 12-layer transformer, 768 hidden units, 12 attention heads
-- Tokenizer: Byte-Pair Encoding (BPE)
-- Improvements: Better training procedure, larger batch sizes
-- Parameters: 125M
-
-**Hybrid Ensemble**
-```python
-# Weighted average of softmax probabilities
-hybrid_logits = 0.5 * bert_logits + 0.5 * roberta_logits
-prediction = argmax(hybrid_logits)
-```
-
-### Performance Metrics
-
-**Training Metrics**:
-- Loss: Cross-entropy loss
-- Accuracy: % correct predictions
-- Macro-F1: Unweighted average across classes
-- Per-class precision/recall/F1
-
-**Expected Results** (after proper training):
-- BERT: 65-70% test accuracy
-- RoBERTa: 66-71% test accuracy
-- Hybrid: 67-72% test accuracy
-
-### Data Splits
-
-- **Training**: 70% (~16,100 samples)
-  - Used for fine-tuning model weights
-  - Applied with RandomOverSampler for class balance
-  
-- **Validation**: 15% (~3,450 samples)
-  - Used for hyperparameter tuning
-  - Tracked after each epoch
-  - Prevents overfitting detection
-  
-- **Test**: 15% (~3,450 samples)
-  - Held-out for final evaluation
-  - Never seen during training
-  - Represents real-world performance
-
-### Class Distribution
-
-After balancing:
-```
-true: 16.7%
-mostly-true: 16.7%
-half-true: 16.7%
-barely-true: 16.7%
-false: 16.7%
-pants-on-fire: 16.7%
-```
+| Class / Function | Description |
+|---|---|
+| `TinkerTrainer` | Training loop: `train_epoch()`, `evaluate_loss()`, `train()` |
+| `MetricsCalculator.calculate()` | Accuracy, macro F1, weighted F1, confusion matrix, report |
+| `plot_curves(history)` | Save loss curve PNG |
+| `plot_confusion_matrix(y_true, y_pred)` | Save confusion matrix PNG |
+| `save_results(history, test_metrics)` | Write JSON results file |
 
 ---
 
 ## Troubleshooting
 
-### CUDA Out of Memory
-
-**Error**: `RuntimeError: CUDA out of memory`
-
-**Solutions**:
-1. Reduce batch size: `batch_size = 8` (instead of 16)
-2. Reduce epochs: `epochs = 1` (test first)
-3. Use CPU: Check notebook - falls back automatically
-4. Upgrade GPU or use Tinker API
-
-### Missing Dependencies
-
-**Error**: `ModuleNotFoundError: No module named 'transformers'`
-
-**Solution**:
+**`tinker SDK not installed`**
 ```bash
-pip install -r requirements_models.txt
+pip install tinker
 ```
 
-### Dataset Not Found
+**`No URI found at artifacts/tinker_weights_uri.txt`**
+Run `python src/train.py` first. The URI is written automatically at the end of training.
 
-**Error**: `FileNotFoundError: data/train.csv not found`
+**`Unknown label: 'nan'`**
+A row in the TSV has a missing label. The `process()` method drops rows with null
+`label` or `statement` columns — this should not occur with the standard LIAR2 files.
 
-**Solution**:
-1. Download LIAR2 from https://www.cs.ucsb.edu/~william/liar.html
-2. Extract to `data/` directory
-3. Verify structure: `data/train.csv`, `data/val.csv`, `data/test.csv`
-
-### Tinker API Connection Failed
-
-**Error**: `ConnectionError: Failed to connect to Tinker API`
-
-**Solutions**:
-1. Check `.env` file has correct API key
-2. Verify internet connection
-3. Check Tinker status page
-4. Falls back to local training automatically
-
-### Out of Disk Space
-
-**Error**: `OSError: [Errno 28] No space left on device`
-
-**Causes**:
-- Model checkpoints: ~1.7 GB each
-- Training logs: Can accumulate
-
-**Solutions**:
-1. Delete old checkpoints: `rm artifacts/*_old.pt`
-2. Clear garbage models: `rm artifacts/checkpoint_*.pt`
-3. Compress training results: `gzip artifacts/training_results.json`
-
-### Low Accuracy (<55%)
-
-**Possible Causes**:
-1. Insufficient training epochs (try 5-10)
-2. Learning rate too high (try 1e-5 instead of 2e-5)
-3. Class imbalance not properly handled
-4. Data quality issues
-
-**Solutions**:
-1. Increase epochs in notebook config
-2. Adjust learning rates
-3. Check data balancing: `np.bincount(y_train)`
-4. Visualize: Check sample predictions and attention
-
----
-
-## File Guide
-
-### Notebooks (Run in Order)
-
-1. **01_data_loading_cleaning_encoding.ipynb** (30 min)
-   - Load LIAR2 dataset
-   - Explore data distribution
-   - Process and encode for models
-   - Generate `artifacts/encoded_data.npz`
-
-2. **02_model_training.ipynb** (10 min setup)
-   - Balance training data
-   - Split into train/val/test
-   - Initialize model classes
-   - Configure Tinker API (optional)
-
-3. **03_training_execution.ipynb** (1-2 hours training)
-   - Fine-tune BERT and RoBERTa
-   - Create hybrid ensemble
-   - Evaluate on test set
-   - Save models and results
-
-### Python Modules
-
-- **config.py**: Centralized configuration
-- **data_processor.py**: Data loading and preprocessing
-- **models.py**: Model definitions and Tinker integration
-- **training_utils.py**: Training helpers and metrics
-- **predict.py**: Inference API and CLI
-
-### Generated Artifacts
-
-- **encoded_data.npz**: Processed sequences and labels (300 MB)
-- **data_splits.npz**: Train/val/test splits
-- **processor.pkl**: Tokenizer and label encoder
-- **bert_model.pt**: Fine-tuned BERT weights (440 MB)
-- **roberta_model.pt**: Fine-tuned RoBERTa weights (500 MB)
-- **training_results.json**: Metrics and history
+**Tinker connection error**
+- Confirm `TINKER_API_KEY` is set in your environment
+- Check your internet connection
+- Verify the key is valid in the Tinker dashboard
 
 ---
 
 ## References
 
-- **LIAR2 Dataset**: https://www.cs.ucsb.edu/~william/liar.html
-- **BERT Paper**: https://arxiv.org/abs/1810.04805
-- **RoBERTa Paper**: https://arxiv.org/abs/1907.11692
-- **Hugging Face**: https://huggingface.co
-- **Tinker API**: https://tinker.thinkingmachines.ai
-- **PyTorch Docs**: https://pytorch.org
-
----
-
-## Project Status Summary
-
-| Phase | Component | Status | Quality |
-|-------|-----------|--------|---------|
-| 1 | Data Pipeline | ✅ Complete | Production-ready |
-| 2 | Training Setup | ✅ Complete | Production-ready |
-| 3 | Training Execution | ✅ Complete | Production-ready |
-| 4 | Inference API | ✅ Complete | Production-ready |
-| 5 | Model Fine-tuning | 🔄 In Progress | Semi-complete |
-| 6 | Optimization | ⏳ Pending | Not started |
-| 7 | Production Deployment | ⏳ Pending | Not started |
-
-**Next Action**: Run notebook 01 → 02 → 03 to train models and evaluate! 🚀
-
----
-
-**Last Updated**: March 23, 2026
-**Contributors**: Hamdan & GitHub Copilot
-**License**: MIT
+- LIAR2 Dataset — Wang et al. (2017), extended by Alhindi et al. (2018)
+- [LIAR Dataset paper](https://arxiv.org/abs/1705.00648)
+- [Tinker API](https://tinker.thinkingmachines.ai)
+- [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)

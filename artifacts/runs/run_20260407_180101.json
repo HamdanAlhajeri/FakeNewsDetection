@@ -1,0 +1,31 @@
+{
+  "run_id": "run_20260407_180101",
+  "timestamp": "2026-04-07T23:32:45.424885",
+  "uri": "a27eace9-ac78-5c81-8454-2b720f4db0a4:train:0",
+  "config": {
+    "base_model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+    "lora_rank": 8,
+    "learning_rate": 2e-05,
+    "batch_size": 8,
+    "epochs": 3,
+    "max_inference_tokens": 10,
+    "temperature": 0.0
+  },
+  "metrics": {
+    "accuracy": 0.4193,
+    "macro_f1": 0.4299,
+    "weighted_f1": 0.4175
+  },
+  "history": {
+    "train_loss": [
+      0.5929530516057928,
+      0.5353100072662128,
+      0.3802288207559153
+    ],
+    "val_loss": [
+      0.5339785552247898,
+      0.5177992353785853,
+      0.6299370813157197
+    ]
+  }
+}

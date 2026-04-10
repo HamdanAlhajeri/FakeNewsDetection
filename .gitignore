@@ -1,6 +1,28 @@
+# Environment
 .env
+
+# Data formats
 *.npz
 *.csv
 *.tsv
 *.log
 *.pkl
+
+# Model weights (too large for git)
+*.pt
+*.pth
+*.bin
+*.ckpt
+artifacts/*.pt
+artifacts/*.pth
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Sphinx build output
+docs/_build/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/

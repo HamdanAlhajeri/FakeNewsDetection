@@ -5,7 +5,15 @@
       "Bash(python:*)",
       "WebFetch(domain:tinker-docs.thinkingmachines.ai)",
       "WebSearch",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(python3 docs/project_review.py)",
+      "Bash(/Users/nr83/anaconda3/envs/v_fakenews/bin/python docs/project_review.py)",
+      "Bash(/Users/nr83/anaconda3/envs/v_fakenews/bin/pip list:*)",
+      "Bash(/Users/nr83/anaconda3/envs/v_fakenews/bin/pip install:*)",
+      "Bash(/Users/nr83/anaconda3/envs/v_fakenews/bin/python -c \"import sphinx; print\\(''Sphinx is installed''\\)\")",
+      "Bash(/Users/nr83/anaconda3/envs/v_fakenews/bin/sphinx-build -b html . _build/html)",
+      "Bash(ls /Users/nr83/git/FakeNewsDetection/docs/_build/html/*.html)",
+      "Bash(open /Users/nr83/git/FakeNewsDetection/docs/_build/html/index.html)"
     ]
   }
 }

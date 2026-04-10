@@ -1,43 +1,67 @@
 """
-Prediction script for fake news detection.
+Inference script for Fake News Detection — Tinker API.
 
-Two modes:
-  --mode tinker   Use a Tinker-trained LLM (default, requires trained weights)
-  --mode local    Use a locally saved BERT/RoBERTa .pt checkpoint
-
-Usage examples:
-  python src/predict.py --text "The unemployment rate is 3 percent"
-  python src/predict.py --text "Statement here" --proba
-  python src/predict.py --file data/statements.txt
-  python src/predict.py --mode local --model artifacts/bert_model.pt --type bert --text "..."
+Usage:
+    python src/predict.py --text "The unemployment rate is 3 percent."
+    python src/predict.py --text "..." --proba
+    python src/predict.py --file statements.csv --col statement
+    python src/predict.py --file statements.tsv --col text --out results.tsv
+    python src/predict.py --run run_20260407_143022 --text "..."
+    python src/predict.py --list-runs
 """
 
-import argparse
+import sys
 import json
+import argparse
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
 
+import pandas as pd
+from dotenv import load_dotenv
+load_dotenv()
 
-# ── Tinker predictor ──────────────────────────────────────────────────────────
+from config import ARTIFACTS_DIR, TINKER_WEIGHTS_URI_PATH
+
+RUNS_DIR      = ARTIFACTS_DIR / 'runs'
+RUNS_REGISTRY = ARTIFACTS_DIR / 'runs_registry.json'
+from models import TinkerClassifier
+
 
 class TinkerPredictor:
     """
-    Predict fake news labels using a Tinker-trained LLM sampling client.
+    Load a trained Tinker checkpoint and run inference.
 
-    The tinker_uri is the weights path printed at the end of notebook 03,
-    e.g. 'tinker://uuid:train:0/sampler_weights/checkpoint_name'
+    Usage:
+        predictor = TinkerPredictor()                    # reads URI from artifacts/
+        predictor = TinkerPredictor(uri="tinker://...")  # explicit URI
+        label = predictor.predict("Some political statement")
+        label, logprobs = predictor.predict("...", return_proba=True)
     """
 
-    def __init__(self, tinker_uri: str):
-        """
-        Args:
-            tinker_uri: Tinker weights URI returned by save_for_inference()
-                        or found in artifacts/tinker_weights_uri.txt
-        """
-        from models import TinkerClassifier
-        self.classifier = TinkerClassifier(base_model=tinker_uri)
+    def __init__(self, uri: str = None, run_id: str = None):
+        if uri is None:
+            if run_id is not None:
+                # Load URI from a specific named run
+                run_file = RUNS_DIR / f'{run_id}.json'
+                if not run_file.exists():
+                    raise FileNotFoundError(
+                        f"Run '{run_id}' not found. "
+                        "Use --list-runs to see available runs."
+                    )
+                uri = json.loads(run_file.read_text())['uri']
+            elif TINKER_WEIGHTS_URI_PATH.exists():
+                # Default: load the latest run
+                uri = TINKER_WEIGHTS_URI_PATH.read_text().strip()
+            else:
+                raise FileNotFoundError(
+                    "No saved runs found. "
+                    "Run `python src/train.py` first, or pass --uri / --run."
+                )
+
+        self.classifier = TinkerClassifier()
         self.classifier.connect()
-        self.classifier.load_sampling_client(tinker_uri)
-        print(f"Loaded Tinker model from {tinker_uri}")
+        self.classifier.load_sampling_client(uri)
+        print(f"Loaded model from URI: {uri}")
 
     def predict(self, text: str, return_proba: bool = False):
         return self.classifier.predict(text, return_proba=return_proba)
@@ -46,135 +70,103 @@ class TinkerPredictor:
         return self.classifier.predict_batch(texts)
 
 
-# ── Local (BERT/RoBERTa) predictor ───────────────────────────────────────────
-
-class LocalPredictor:
-    """
-    Predict fake news labels using a locally saved BERT or RoBERTa .pt checkpoint.
-    """
-
-    def __init__(self, model_path: str, model_type: str = 'bert', device: str = 'cuda'):
-        """
-        Args:
-            model_path: Path to .pt checkpoint file
-            model_type: 'bert' or 'roberta'
-            device: 'cuda' or 'cpu'
-        """
-        import torch
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification
-        from config import TRUTHFULNESS_LABELS
-
-        self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
-        self.model_type = model_type
-
-        model_name = 'bert-base-uncased' if model_type == 'bert' else 'roberta-base'
-
-        if isinstance(TRUTHFULNESS_LABELS, dict):
-            self.labels = [TRUTHFULNESS_LABELS[i] for i in sorted(TRUTHFULNESS_LABELS.keys())]
-        else:
-            self.labels = list(TRUTHFULNESS_LABELS)
-
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            model_name, num_labels=len(self.labels)
-        )
-        self.model.load_state_dict(
-            torch.load(model_path, map_location=self.device)
-        )
-        self.model.to(self.device)
-        self.model.eval()
-        print(f"Loaded {model_type.upper()} model from {model_path}")
-
-    def predict(self, text: str, return_proba: bool = False):
-        import torch
-        import numpy as np
-
-        inputs = self.tokenizer(
-            text, truncation=True, padding='max_length',
-            max_length=128, return_tensors='pt'
-        )
-        input_ids = inputs['input_ids'].to(self.device)
-        attention_mask = inputs['attention_mask'].to(self.device)
-
-        with torch.no_grad():
-            outputs = self.model(input_ids, attention_mask=attention_mask)
-            probs = torch.softmax(outputs.logits, dim=1)[0].cpu().numpy()
-
-        pred_label = self.labels[int(np.argmax(probs))]
-
-        if return_proba:
-            return pred_label, {l: float(p) for l, p in zip(self.labels, probs)}
-        return pred_label
-
-    def predict_batch(self, texts: list) -> list:
-        return [self.predict(t) for t in texts]
-
-
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+def _load_tabular(path: Path, col: str) -> tuple:
+    """
+    Load a CSV or TSV file and return (DataFrame, list of texts from col).
+    Separator is inferred from the file extension.
+    """
+    sep = '\t' if path.suffix.lower() == '.tsv' else ','
+    df  = pd.read_csv(path, sep=sep, header=None if col.isdigit() else 'infer')
+    if col.isdigit():
+        col_key = int(col)
+        if col_key >= len(df.columns):
+            raise ValueError(
+                f"Column index {col_key} out of range. "
+                f"File has {len(df.columns)} columns (0–{len(df.columns)-1})."
+            )
+    else:
+        if col not in df.columns:
+            available = ', '.join(df.columns.astype(str).tolist())
+            raise ValueError(
+                f"Column '{col}' not found in {path.name}. "
+                f"Available columns: {available}\n"
+                f"Use --col to specify the correct column name or a numeric index."
+            )
+        col_key = col
+    texts = df[col_key].fillna('').astype(str).tolist()
+    return df, texts
+
+
 def main():
-    parser = argparse.ArgumentParser(description='Predict fake news labels')
-    parser.add_argument('--mode', default='tinker', choices=['tinker', 'local'],
-                        help='Prediction mode: tinker (default) or local (.pt file)')
-
-    # Tinker args
-    parser.add_argument('--uri', default=None,
-                        help='[tinker mode] Tinker weights URI. '
-                             'Defaults to contents of artifacts/tinker_weights_uri.txt')
-
-    # Local args
-    parser.add_argument('--model', default='artifacts/bert_model.pt',
-                        help='[local mode] Path to .pt model checkpoint')
-    parser.add_argument('--type', default='bert', choices=['bert', 'roberta'],
-                        help='[local mode] Model type')
-    parser.add_argument('--device', default='cuda', choices=['cuda', 'cpu'],
-                        help='[local mode] Device to run inference on')
-
-    # Shared args
-    parser.add_argument('--text', help='Single statement to classify')
-    parser.add_argument('--file', help='File with one statement per line')
-    parser.add_argument('--proba', action='store_true',
-                        help='Print per-label probabilities / log-probabilities')
-
+    parser = argparse.ArgumentParser(description='Fake news label prediction (Tinker)')
+    parser.add_argument('--uri',        default=None,
+                        help='Explicit Tinker weights URI')
+    parser.add_argument('--run',        default=None,
+                        help='Run ID to load (e.g. run_20260407_143022). Defaults to latest.')
+    parser.add_argument('--list-runs',  action='store_true',
+                        help='List all saved runs and exit')
+    parser.add_argument('--text',       default=None,
+                        help='Single statement to classify')
+    parser.add_argument('--file',       default=None,
+                        help='CSV or TSV file to classify (separator inferred from extension)')
+    parser.add_argument('--col',        default='text',
+                        help='Column containing the statements (default: text)')
+    parser.add_argument('--out',        default=None,
+                        help='Output file to save results (CSV or TSV, inferred from extension)')
+    parser.add_argument('--proba',      action='store_true',
+                        help='Print per-label log-probabilities')
     args = parser.parse_args()
 
-    # Build predictor
-    if args.mode == 'tinker':
-        uri = args.uri
-        if uri is None:
-            uri_file = Path('artifacts/tinker_weights_uri.txt')
-            if uri_file.exists():
-                uri = uri_file.read_text().strip()
-            else:
-                parser.error(
-                    "No Tinker URI supplied. Pass --uri or train first "
-                    "(notebook 03 saves it to artifacts/tinker_weights_uri.txt)"
-                )
-        predictor = TinkerPredictor(tinker_uri=uri)
-    else:
-        predictor = LocalPredictor(args.model, model_type=args.type, device=args.device)
+    if args.list_runs:
+        if not RUNS_REGISTRY.exists():
+            print("No runs found. Train a model first: python src/train.py")
+        else:
+            runs = json.loads(RUNS_REGISTRY.read_text())
+            print(f"\n{'Run ID':<30} {'Timestamp':<22} {'Accuracy':>9} {'Macro F1':>9}")
+            print('-' * 75)
+            for r in runs:
+                print(f"{r['run_id']:<30} {r['timestamp'][:19]:<22} "
+                      f"{r['accuracy']:>9.4f} {r['macro_f1']:>9.4f}")
+            print(f"\nLatest: {runs[0]['run_id']}")
+        return
 
-    # Run prediction
+    predictor = TinkerPredictor(uri=args.uri, run_id=args.run)
+
     if args.text:
         if args.proba:
-            label, proba = predictor.predict(args.text, return_proba=True)
+            label, logprobs = predictor.predict(args.text, return_proba=True)
             print(f"\nText:       {args.text}")
             print(f"Prediction: {label}")
-            print("\nPer-label scores:")
-            for l, p in sorted(proba.items(), key=lambda x: x[1], reverse=True):
-                print(f"  {l:<14s} {p:.4f}")
+            print("\nPer-label log-probabilities:")
+            for lbl, lp in sorted(logprobs.items(), key=lambda x: x[1], reverse=True):
+                print(f"  {lbl:<14s} {lp:.4f}")
         else:
-            label = predictor.predict(args.text, return_proba=False)
+            label = predictor.predict(args.text)
             print(f"\nText:       {args.text}")
             print(f"Prediction: {label}")
 
     elif args.file:
-        with open(args.file, 'r') as f:
-            texts = [line.strip() for line in f if line.strip()]
+        path = Path(args.file)
+        df, texts = _load_tabular(path, args.col)
+        print(f"\nPredicting {len(texts)} rows from {path.name} (column: '{args.col}')...")
+
         predictions = predictor.predict_batch(texts)
-        print(f"\nPredictions for {len(texts)} statements:")
+        df['prediction'] = predictions
+
+        # Print to console
+        print(f"\n{'#':<5} {'Text':<70}  Prediction")
+        print('-' * 90)
         for i, (text, pred) in enumerate(zip(texts, predictions), 1):
-            print(f"  {i}. {text[:60]}... → {pred}")
+            print(f"{i:<5} {str(text)[:70]:<70}  {pred}")
+
+        # Optionally save to file
+        if args.out:
+            out_path = Path(args.out)
+            sep = '\t' if out_path.suffix.lower() == '.tsv' else ','
+            df.to_csv(out_path, sep=sep, index=False)
+            print(f"\nResults saved to {out_path}")
 
     else:
         parser.print_help()

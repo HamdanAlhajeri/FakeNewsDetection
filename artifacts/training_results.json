@@ -1,20 +1,22 @@
 {
-  "base_model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
-  "lora_rank": 8,
-  "learning_rate": 2e-05,
-  "batch_size": 8,
-  "epochs_trained": 3,
-  "tinker_uri": "1731a955-6aca-5d6a-a18f-b3914a1e4b47:train:0",
-  "test_accuracy": 0.7158613445378151,
-  "test_macro_f1": 0.717079829300925,
-  "train_loss_history": [
-    0.7318744447317209,
-    0.41993982514014117,
-    0.11701562183411993
-  ],
-  "val_loss_history": [
-    0.6057903979494753,
-    0.44019902112490156,
-    0.47384662076344813
-  ]
+  "history": {
+    "train_loss": [
+      0.596322,
+      0.521667,
+      0.450099,
+      0.2759
+    ],
+    "val_loss": [
+      0.534883,
+      0.511877,
+      0.537595,
+      0.64716
+    ]
+  },
+  "test": {
+    "accuracy": 0.4512860483242401,
+    "macro_f1": 0.4596027464891221,
+    "weighted_f1": 0.4422936739950851,
+    "classification_report": "              precision    recall  f1-score   support\n\n barely-true       0.38      0.48      0.43       214\n       false       0.53      0.43      0.47       250\n   half-true       0.43      0.37      0.40       267\n mostly-true       0.44      0.59      0.50       249\n  pants-fire       0.54      0.76      0.63        92\n        true       0.46      0.25      0.33       211\n\n    accuracy                           0.45      1283\n   macro avg       0.46      0.48      0.46      1283\nweighted avg       0.46      0.45      0.44      1283\n"
+  }
 }

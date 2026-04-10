@@ -1,0 +1,30 @@
+[
+  {
+    "run_id": "run_20260409_162831",
+    "timestamp": "2026-04-09T23:52:19.275598",
+    "uri": "tinker://f2e4222c-06dd-509e-ae47-dbacd639a854:train:0/sampler_weights/run_20260409_162831",
+    "accuracy": 0.4513,
+    "macro_f1": 0.4596
+  },
+  {
+    "run_id": "run_20260408_200909",
+    "timestamp": "2026-04-09T03:00:41.353278",
+    "uri": "tinker://636a8d19-0450-52f7-8c62-f88691f82cf7:train:0/sampler_weights/run_20260408_200909",
+    "accuracy": 0.4404,
+    "macro_f1": 0.4488
+  },
+  {
+    "run_id": "run_20260408_001154",
+    "timestamp": "2026-04-08T04:49:18.165542",
+    "uri": "tinker://0c91d6e5-a40a-5e3c-8659-db3c0288a2e4:train:0/sampler_weights/run_20260408_001154",
+    "accuracy": 0.431,
+    "macro_f1": 0.4487
+  },
+  {
+    "run_id": "run_20260407_180101",
+    "timestamp": "2026-04-07T23:32:45.424885",
+    "uri": "a27eace9-ac78-5c81-8454-2b720f4db0a4:train:0",
+    "accuracy": 0.4193,
+    "macro_f1": 0.4299
+  }
+]

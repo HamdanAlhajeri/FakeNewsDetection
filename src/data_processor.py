@@ -1,285 +1,183 @@
 """
-Data processing utilities for Fake News Detection project.
-Handles loading, cleaning, and encoding of LIAR2 dataset.
+Data processing for Fake News Detection.
+Loads LIAR2 TSV files, cleans text, combines all features,
+and prepares Tinker Datum objects for LoRA fine-tuning.
 """
 
-import pandas as pd
-import numpy as np
 import re
-import nltk
-from sklearn.preprocessing import LabelEncoder
-from typing import Tuple, Dict, List, Any
 import logging
+from typing import Any, Dict, List, Tuple
+
+import numpy as np
+import pandas as pd
+
+from config import TSV_COLUMNS, LABEL_TO_IDX, LABEL_NAMES
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Download required NLTK data
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords')
 
 class DataProcessor:
-    """Main class for data processing pipeline."""
-    
-    # Truthfulness labels from LIAR2 dataset
-    TRUTHFULNESS_LABELS = [
-        'true',
-        'mostly-true',
-        'half-true',
-        'barely-true',
-        'false',
-        'pants-fire'
-    ]
-    
-    def __init__(self):
-        """Initialize data processor with label encoder."""
-        self.label_encoder = LabelEncoder()
-        self.label_encoder.fit(self.TRUTHFULNESS_LABELS)
-        self.vocab = {}
-        self.vocab_size = 0
-        # Initialize stopwords set
-        from nltk.corpus import stopwords
-        self.stopwords_set = set(stopwords.words('english'))
-    
-    @staticmethod
-    def load_data(filepath: str) -> pd.DataFrame:
-        """
-        Load LIAR2 dataset from CSV file.
-        
-        Args:
-            filepath: Path to the CSV file
-            
-        Returns:
-            DataFrame with loaded data
-        """
-        logger.info(f"Loading data from {filepath}")
-        try:
-            df = pd.read_csv(filepath)
-            logger.info(f"Loaded {len(df)} records with columns: {df.columns.tolist()}")
-            return df
-        except FileNotFoundError:
-            logger.error(f"File not found: {filepath}")
-            raise
-    
-    def clean_text(self, text: str, remove_stops: bool = False) -> str:
-        """
-        Clean and normalize text.
-        
-        Args:
-            text: Raw text to clean
-            remove_stops: Whether to remove stopwords
-            
-        Returns:
-            Cleaned text
-        """
-        if not isinstance(text, str):
-            return ""
-        
-        # Convert to lowercase
-        text = text.lower()
-        
-        # Remove URLs
-        text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-        
-        # Remove email addresses
-        text = re.sub(r'\S+@\S+', '', text)
-        
-        # Remove special characters but keep alphanumeric
-        text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
-        
-        # Remove extra whitespace
-        text = re.sub(r'\s+', ' ', text).strip()
-        
-        # Remove stopwords if requested
-        if remove_stops:
-            words = text.split()
-            words = [w for w in words if w not in self.stopwords_set]
-            text = ' '.join(words)
-        
-        return text
-    
-    def encode_labels(self, labels: pd.Series) -> np.ndarray:
-        """
-        Encode truthfulness labels to numeric values.
-        
-        Args:
-            labels: Series of label strings
-            
-        Returns:
-            Numpy array of encoded labels
-        """
-        # Ensure labels are strings, normalize to lowercase and strip whitespace
-        labels = labels.astype(str).str.lower().str.strip()
-        
-        try:
-            # Encode labels
-            encoded = self.label_encoder.transform(labels)
-            logger.info(f"Encoded {len(encoded)} labels")
-            return encoded
-        except ValueError as e:
-            logger.error(f"Error encoding labels: {e}")
-            logger.error(f"Available classes: {self.label_encoder.classes_}")
-            logger.error(f"Unique labels in data: {labels.unique()}")
-            raise
-    
-    def build_vocabulary(self, texts: pd.Series, min_freq: int = 1) -> Dict[str, int]:
-        """
-        Build vocabulary from texts.
-        
-        Args:
-            texts: Series of text documents
-            min_freq: Minimum frequency for a word to be included
-            
-        Returns:
-            Dictionary mapping words to indices
-        """
-        logger.info("Building vocabulary...")
-        word_freq = {}
-        
-        for text in texts:
-            tokens = text.split()
-            for token in tokens:
-                word_freq[token] = word_freq.get(token, 0) + 1
-        
-        # Filter by minimum frequency
-        vocab = {word: idx for idx, (word, freq) in enumerate(
-            sorted(
-                ((word, freq) for word, freq in word_freq.items() if freq >= min_freq),
-                key=lambda x: x[1],
-                reverse=True
-            )
-        )}
-        
-        self.vocab = vocab
-        self.vocab_size = len(vocab)
-        logger.info(f"Vocabulary size: {self.vocab_size}")
-        
-        return vocab
-    
-    def texts_to_sequences(self, texts: pd.Series) -> List[List[int]]:
-        """
-        Convert texts to sequences of word indices.
-        
-        Args:
-            texts: Series of text documents
-            
-        Returns:
-            List of sequences
-        """
-        if not self.vocab:
-            raise ValueError("Vocabulary not built. Call build_vocabulary first.")
-        
-        sequences = []
-        for text in texts:
-            tokens = text.split()
-            sequence = [self.vocab[token] for token in tokens if token in self.vocab]
-            sequences.append(sequence)
-        
-        return sequences
-    
-    def pad_sequences(self, sequences: List[List[int]], maxlen: int = 100) -> np.ndarray:
-        """
-        Pad sequences to fixed length.
-        
-        Args:
-            sequences: List of sequences
-            maxlen: Maximum sequence length
-            
-        Returns:
-            Padded sequence array
-        """
-        padded = np.zeros((len(sequences), maxlen), dtype=np.int32)
-        
-        for idx, seq in enumerate(sequences):
-            length = min(len(seq), maxlen)
-            padded[idx, :length] = seq[:length]
-        
-        return padded
-    
-    def process_pipeline(self, df: pd.DataFrame, 
-                        text_column: str = 'statement',
-                        label_column: str = 'label',
-                        remove_stops: bool = True) -> Tuple[pd.DataFrame, np.ndarray]:
-        """
-        Complete processing pipeline: clean text, remove nulls, encode labels.
-        
-        Args:
-            df: Input DataFrame
-            text_column: Name of text column
-            label_column: Name of label column
-            remove_stops: Whether to remove stopwords
-            
-        Returns:
-            Tuple of (processed DataFrame, encoded labels)
-        """
-        logger.info("Starting data processing pipeline...")
-        
-        # Make a copy to avoid modifying original
-        df = df.copy()
-        
-        # Remove rows with missing values in key columns
-        df = df.dropna(subset=[text_column, label_column])
-        logger.info(f"Removed nulls: {len(df)} records remaining")
-        
-        # Clean text with optional stopword removal
-        df['text_cleaned'] = df[text_column].apply(lambda x: self.clean_text(x, remove_stops=remove_stops))
-        
-        # Remove empty texts
-        df = df[df['text_cleaned'].str.len() > 0]
-        logger.info(f"Removed empty texts: {len(df)} records remaining")
-        
-        # Normalize labels (lowercase and strip whitespace)
-        df[label_column] = df[label_column].astype(str).str.lower().str.strip()
-        
-        # Encode labels
-        encoded_labels = self.encode_labels(df[label_column])
-        
-        logger.info("Data processing pipeline completed successfully")
+    """Load, clean, and prepare LIAR2 data for Tinker fine-tuning."""
 
-        return df, encoded_labels
+    # ── Loading ───────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def load_data(filepath) -> pd.DataFrame:
+        df = pd.read_csv(
+            filepath, sep='\t', header=None,
+            names=TSV_COLUMNS, quoting=3, on_bad_lines='skip'
+        )
+        logger.info(f"Loaded {len(df)} rows from {filepath}")
+        return df
+
+    # ── Cleaning ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def clean_text(text) -> str:
+        if not isinstance(text, str) or not text.strip():
+            return ""
+        text = re.sub(r'https?://\S+|www\.\S+', '', text)
+        text = re.sub(r'\S+@\S+', '', text)
+        return ' '.join(text.split())
+
+    # Count columns → human-readable label names
+    _COUNT_COLS = [
+        ('barely_true_count',    'barely-true'),
+        ('false_count',          'false'),
+        ('half_true_count',      'half-true'),
+        ('mostly_true_count',    'mostly-true'),
+        ('pants_on_fire_count',  'pants-fire'),
+    ]
+
+    @staticmethod
+    def _speaker_history(row: pd.Series) -> str:
+        """
+        Derive speaker credibility stats from historical count columns.
+
+        Returns a string like:
+            "Speaker history: 45 prior claims — mostly-true: 35%, false: 22%, ..."
+        or empty string if no history is available.
+        """
+        counts = {}
+        for col, label in DataProcessor._COUNT_COLS:
+            try:
+                val = int(float(row.get(col, 0) or 0))
+            except (ValueError, TypeError):
+                val = 0
+            counts[label] = val
+
+        total = sum(counts.values())
+        if total == 0:
+            return ""
+
+        # Sort by frequency descending, show all non-zero rates
+        rates = sorted(
+            [(label, cnt / total) for label, cnt in counts.items() if cnt > 0],
+            key=lambda x: x[1], reverse=True
+        )
+        rate_str = ', '.join(f"{lbl}: {pct:.0%}" for lbl, pct in rates)
+        dominant = rates[0][0]
+        return (
+            f"Speaker history: {total} prior claims — {rate_str}. "
+            f"Most common rating: {dominant}"
+        )
+
+    @staticmethod
+    def build_input_text(row: pd.Series) -> str:
+        """
+        Concatenate all feature fields plus engineered credibility stats
+        into a single model-input string.
+        """
+        parts = {
+            'Statement': row.get('statement', ''),
+            'Speaker':   row.get('speaker', ''),
+            'Party':     row.get('party_affiliation', ''),
+            'Job':       row.get('job_title', ''),
+            'Subject':   row.get('subject', ''),
+            'Context':   row.get('context', ''),
+        }
+        segments = []
+        for key, val in parts.items():
+            cleaned = DataProcessor.clean_text(val)
+            if cleaned:
+                segments.append(f"{key}: {cleaned}")
+
+        # Append speaker credibility history (engineered feature)
+        history = DataProcessor._speaker_history(row)
+        if history:
+            segments.append(history)
+
+        return ' '.join(segments)
+
+    # ── Label encoding ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def encode_labels(labels: pd.Series) -> List[int]:
+        encoded = []
+        for lbl in labels:
+            lbl = str(lbl).strip().lower()
+            if lbl not in LABEL_TO_IDX:
+                raise ValueError(f"Unknown label: {repr(lbl)}")
+            encoded.append(LABEL_TO_IDX[lbl])
+        return encoded
+
+    # ── Full pipeline ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def process(df: pd.DataFrame) -> Tuple[List[str], List[int]]:
+        """
+        Clean, combine features, and encode labels.
+
+        Returns:
+            texts  — combined feature strings, one per sample
+            labels — integer label indices (0–5)
+        """
+        df = df.dropna(subset=['label', 'statement']).copy()
+        texts  = [DataProcessor.build_input_text(row) for _, row in df.iterrows()]
+        labels = DataProcessor.encode_labels(df['label'])
+        # Drop rows whose combined text is empty after cleaning
+        filtered = [(t, l) for t, l in zip(texts, labels) if t.strip()]
+        if not filtered:
+            raise ValueError("All texts are empty after cleaning.")
+        texts, labels = zip(*filtered)
+        return list(texts), list(labels)
+
+    # ── Tinker datum preparation ───────────────────────────────────────────────
 
     @staticmethod
     def prepare_tinker_datum(text: str, label: str, tokenizer: Any,
-                             prompt_template: str) -> Any:
+                             prompt_template: str,
+                             class_weight: float = 1.0) -> Any:
         """
-        Convert a single text/label pair into a Tinker Datum for cross-entropy training.
-
-        The prompt tokens receive weight 0 (model is not trained on them).
-        The completion tokens receive weight 1 (model is trained to predict them).
-        Tokens are shifted by one position for next-token prediction.
+        Convert a single (text, label) pair into a Tinker Datum.
 
         Args:
-            text: Input statement text
-            label: Truthfulness label string (e.g. 'false', 'half-true')
-            tokenizer: Tinker tokenizer from training_client.get_tokenizer()
+            text:            Combined feature string from build_input_text()
+            label:           Label string, e.g. 'false'
+            tokenizer:       Tinker tokenizer from training_client.get_tokenizer()
             prompt_template: Format string with {text} placeholder
+            class_weight:    Multiplier applied to completion token weights (for class balancing)
 
         Returns:
             types.Datum ready for forward_backward()
         """
         from tinker import types, TensorData
 
-        prompt = prompt_template.format(text=text)
+        prompt     = prompt_template.format(text=text)
         completion = f" {label}"
 
-        prompt_tokens = tokenizer.encode(prompt, add_special_tokens=True)
-        completion_tokens = tokenizer.encode(completion, add_special_tokens=False)
+        prompt_tokens     = tokenizer.encode(prompt,      add_special_tokens=True)
+        completion_tokens = tokenizer.encode(completion,  add_special_tokens=False)
 
-        # Weight 0 = don't train on prompt, 1 = train on completion
-        weights = [0] * len(prompt_tokens) + [1] * len(completion_tokens)
+        # Weight 0 = don't train on prompt tokens; class_weight = train on completion tokens
+        weights    = [0.0] * len(prompt_tokens) + [class_weight] * len(completion_tokens)
         all_tokens = prompt_tokens + completion_tokens
 
-        # Shift for next-token prediction: input[t] → target[t+1]
-        input_tokens = all_tokens[:-1]
+        # Shift for next-token prediction
+        input_tokens  = all_tokens[:-1]
         target_tokens = all_tokens[1:]
-        weights = weights[1:]  # drop first weight (aligns with shifted targets)
+        weights       = weights[1:]
 
         return types.Datum(
             model_input=types.ModelInput.from_ints(tokens=input_tokens),
@@ -290,24 +188,43 @@ class DataProcessor:
         )
 
     @staticmethod
-    def prepare_tinker_dataset(texts: List[str], labels: List[str],
-                               tokenizer: Any, prompt_template: str) -> List[Any]:
+    def compute_class_weights(labels: List[str]) -> Dict[str, float]:
         """
-        Convert a list of texts and labels into Tinker Datums.
+        Compute inverse-frequency class weights so each class contributes equally to loss.
+
+        Returns a dict mapping label string → weight multiplier.
+        """
+        from collections import Counter
+        counts  = Counter(labels)
+        n_total = len(labels)
+        n_classes = len(counts)
+        return {
+            label: (n_total / (n_classes * count))
+            for label, count in counts.items()
+        }
+
+    @staticmethod
+    def prepare_tinker_dataset(texts: List[str], labels: List[str],
+                               tokenizer: Any, prompt_template: str,
+                               class_weights: Dict[str, float] = None) -> List[Any]:
+        """
+        Build a list of Tinker Datums from combined-feature texts and string labels.
 
         Args:
-            texts: List of input statements
-            labels: List of label strings matching TRUTHFULNESS_LABELS
-            tokenizer: Tinker tokenizer
+            texts:           Combined feature strings (from process())
+            labels:          String label names, e.g. ['false', 'half-true', ...]
+            tokenizer:       Tinker tokenizer
             prompt_template: Format string with {text} placeholder
+            class_weights:   Optional dict of label → weight multiplier for class balancing
 
         Returns:
             List of types.Datum objects
         """
         datums = []
         for text, label in zip(texts, labels):
-            datum = DataProcessor.prepare_tinker_datum(
-                text, label, tokenizer, prompt_template
+            weight = class_weights.get(label, 1.0) if class_weights else 1.0
+            datum  = DataProcessor.prepare_tinker_datum(
+                text, label, tokenizer, prompt_template, class_weight=weight
             )
             datums.append(datum)
         logger.info(f"Prepared {len(datums)} Tinker datums")

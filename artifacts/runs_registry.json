@@ -1,5 +1,33 @@
 [
   {
+    "run_id": "eval_20260416_124124",
+    "timestamp": "2026-04-16T14:45:25.040074",
+    "uri": "tinker://51659f4a-41f4-5e7f-9675-6de22702f86d:train:0/sampler_weights/run_20260415_175154",
+    "accuracy": 0.4528,
+    "macro_f1": 0.4504
+  },
+  {
+    "run_id": "run_20260415_175154",
+    "timestamp": "2026-04-16T00:43:50.344046",
+    "uri": "tinker://51659f4a-41f4-5e7f-9675-6de22702f86d:train:0/sampler_weights/run_20260415_175154",
+    "accuracy": 0.4544,
+    "macro_f1": 0.4522
+  },
+  {
+    "run_id": "run_20260414_225118",
+    "timestamp": "2026-04-15T12:26:56.982450",
+    "uri": "tinker://5f8ce657-bf56-5755-bd89-12bc00a6a394:train:0/sampler_weights/run_20260414_225118",
+    "accuracy": 0.4552,
+    "macro_f1": 0.4558
+  },
+  {
+    "run_id": "run_20260413_194710",
+    "timestamp": "2026-04-14T02:07:43.514499",
+    "uri": "tinker://9835526e-710c-5abe-8e35-898b9ed50852:train:0/sampler_weights/run_20260413_194710",
+    "accuracy": 0.4544,
+    "macro_f1": 0.4599
+  },
+  {
     "run_id": "run_20260409_162831",
     "timestamp": "2026-04-09T23:52:19.275598",
     "uri": "tinker://f2e4222c-06dd-509e-ae47-dbacd639a854:train:0/sampler_weights/run_20260409_162831",

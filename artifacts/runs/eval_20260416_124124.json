@@ -1,0 +1,21 @@
+{
+  "run_id": "eval_20260416_124124",
+  "timestamp": "2026-04-16T14:45:25.040074",
+  "uri": "tinker://51659f4a-41f4-5e7f-9675-6de22702f86d:train:0/sampler_weights/run_20260415_175154",
+  "config": {
+    "base_model": "Qwen/Qwen3-8B",
+    "lora_rank": 32,
+    "learning_rate": 0.0002,
+    "batch_size": 8,
+    "epochs": 5,
+    "early_stopping_patience": 2,
+    "max_inference_tokens": 10,
+    "temperature": 0.0
+  },
+  "metrics": {
+    "accuracy": 0.4528,
+    "macro_f1": 0.4504,
+    "weighted_f1": 0.4428
+  },
+  "history": {}
+}

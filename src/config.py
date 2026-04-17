@@ -37,9 +37,9 @@ LABEL_COL    = 'label'
 
 # ── Tinker / LoRA ──────────────────────────────────────────────────────────────
 TINKER_CONFIG = {
-    'base_model':           'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16',
-    'lora_rank':            16,
-    'learning_rate':        1e-5,
+    'base_model':           'Qwen/Qwen3-8B',
+    'lora_rank':            32,
+    'learning_rate':        2e-4,
     'batch_size':           8,
     'epochs':               5,
     'early_stopping_patience': 2,
@@ -47,14 +47,15 @@ TINKER_CONFIG = {
     'temperature':          0.0,
 }
 
-# Prompt template — {text} is the full combined feature string
 PROMPT_TEMPLATE = (
+    "<|im_start|>user\n"
     "Classify the truthfulness of the following political statement "
     "and its context.\n\n"
     "{text}\n\n"
     "Choose exactly one label: barely-true, false, half-true, "
     "mostly-true, pants-fire, true\n\n"
-    "Label:"
+    "Label:<|im_end|>\n"
+    "<|im_start|>assistant\n"
 )
 
 # ── Artifact paths ─────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 """
 Model definition for Fake News Detection.
-TinkerClassifier — LoRA fine-tuning of Nemotron 30B via the Tinker API.
+TinkerClassifier — LoRA fine-tuning of Qwen3-8B via the Tinker API.
 """
 
 import logging
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class TinkerClassifier:
     """
-    Fake news classifier using Tinker LoRA fine-tuning on Nemotron 30B.
+    Fake news classifier using Tinker LoRA fine-tuning on Qwen3-8B.
 
     Training flow:
         classifier = TinkerClassifier()
@@ -32,9 +32,15 @@ class TinkerClassifier:
         classifier.connect()
         classifier.load_sampling_client(uri)
         label = classifier.predict("Some political statement")
+
+    Batch evaluation flow (preprocessed combined strings):
+        classifier.predict_batch(test_texts)  # test_texts from preprocessed TSV
     """
 
     LABELS = ['barely-true', 'false', 'half-true', 'mostly-true', 'pants-fire', 'true']
+
+    # Sort longest-first once at class level — used by _match_label as fallback
+    _LABELS_BY_LENGTH = sorted(LABELS, key=len, reverse=True)
 
     def __init__(self, base_model: str = None, prompt_template: str = None):
         self.base_model      = base_model or TINKER_CONFIG['base_model']
@@ -136,15 +142,18 @@ class TinkerClassifier:
                 half_true_count: int = 0, mostly_true_count: int = 0,
                 pants_on_fire_count: int = 0):
         """
-        Predict label for a statement.
+        Predict label for a raw statement + optional metadata fields.
 
-        Pass metadata and historical count fields to match the richer
-        input used during training.
+        Builds the combined feature string from scratch using all provided
+        fields, then scores each label via logprobs. Use this for real-world
+        inference where you have individual metadata fields available.
+
+        For batch evaluation on preprocessed combined strings, use
+        predict_batch() which bypasses feature reconstruction.
         """
         if self.sampling_client is None:
             raise RuntimeError("Call load_sampling_client() or save_for_inference() first")
 
-        from tinker import types
         import pandas as pd
         from data_processor import DataProcessor
 
@@ -163,47 +172,68 @@ class TinkerClassifier:
         })
         combined = DataProcessor.build_input_text(row)
 
-        tokenizer    = self._tokenizer or self.sampling_client.get_tokenizer()
-        prompt       = self.prompt_template.format(text=combined)
-        prompt_tokens = tokenizer.encode(prompt, add_special_tokens=True)
-        model_input   = types.ModelInput.from_ints(tokens=prompt_tokens)
-
-        result = self.sampling_client.sample(
-            prompt=model_input,
-            num_samples=1,
-            sampling_params=types.SamplingParams(
-                max_tokens=TINKER_CONFIG['max_inference_tokens'],
-                temperature=TINKER_CONFIG['temperature'],
-                stop=["\n", ".", ","],
-            ),
-        ).result()
-
-        generated = tokenizer.decode(result.sequences[0].tokens).strip().lower()
-        predicted  = self._match_label(generated)
+        predicted = self._predict_combined(combined)
 
         if return_proba:
-            logprob_dict = self._compute_label_logprobs(model_input, tokenizer)
+            from tinker import types
+            tokenizer     = self._tokenizer or self.sampling_client.get_tokenizer()
+            prompt        = self.prompt_template.format(text=combined)
+            prompt_tokens = tokenizer.encode(prompt, add_special_tokens=True)
+            model_input   = types.ModelInput.from_ints(tokens=prompt_tokens)
+            logprob_dict  = self._compute_label_logprobs(model_input, tokenizer)
             return predicted, logprob_dict
 
         return predicted
 
     def predict_batch(self, texts: List[str]) -> List[str]:
-        return [self.predict(t) for t in texts]
+        tokenizer = self._tokenizer or self.sampling_client.get_tokenizer()
+        return [self._predict_combined(t, tokenizer) for t in texts]
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
+    def _predict_combined(self, combined_text: str, tokenizer=None) -> str:
+        """
+        Core prediction method. Takes an already-combined feature string,
+        formats the prompt, and scores each label via logprobs.
+
+        This is the single source of truth for inference logic — both
+        predict() and predict_batch() funnel through here.
+        """
+        from tinker import types
+        tokenizer     = tokenizer or self._tokenizer or self.sampling_client.get_tokenizer()
+        prompt        = self.prompt_template.format(text=combined_text)
+        prompt_tokens = tokenizer.encode(prompt, add_special_tokens=True)
+        model_input   = types.ModelInput.from_ints(tokens=prompt_tokens)
+
+        logprob_dict = self._compute_label_logprobs(model_input, tokenizer)
+        predicted    = max(logprob_dict, key=logprob_dict.get)
+
+        logger.debug(f"Prompt (first 300 chars): {prompt[:300]}")
+        logger.debug(f"Logprobs: {logprob_dict} → predicted: {predicted}")
+
+        return predicted
+
     def _match_label(self, generated: str) -> str:
+        """
+        Fallback string matcher — only used if logprob scoring is unavailable.
+        Checks longest labels first to avoid substring collisions
+        (e.g. 'true' matching inside 'mostly-true').
+        """
         generated = generated.strip().lower()
-        for label in self.LABELS:
+        for label in self._LABELS_BY_LENGTH:
             if label in generated:
                 return label
-        for label in self.LABELS:
+        for label in self._LABELS_BY_LENGTH:
             if generated.startswith(label[:4]):
                 return label
         logger.warning(f"Could not match generated text to label: {repr(generated)}")
         return generated
 
     def _compute_label_logprobs(self, prompt_input: Any, tokenizer) -> Dict[str, float]:
+        """
+        Score each candidate label by summing logprobs of its completion tokens.
+        Returns a dict mapping label → logprob (higher = more likely).
+        """
         from tinker import types
         logprob_dict = {}
         for label in self.LABELS:

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Majority Class",
+    "accuracy": 0.2081,
+    "macro_f1": 0.0574,
+    "weighted_f1": 0.0717
+  },
+  {
+    "name": "Uniform Random (1/6 per class)",
+    "accuracy": 0.1871,
+    "macro_f1": 0.1848,
+    "weighted_f1": 0.1897
+  },
+  {
+    "name": "Stratified Random",
+    "accuracy": 0.2042,
+    "macro_f1": 0.193,
+    "weighted_f1": 0.2049
+  },
+  {
+    "name": "Fine-tuned LoRA (run_20260414_225118)",
+    "accuracy": 0.4552,
+    "macro_f1": 0.4558,
+    "weighted_f1": 0.4424
+  }
+]

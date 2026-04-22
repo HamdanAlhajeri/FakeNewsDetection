@@ -1,9 +1,20 @@
 {
-  "history": {},
+  "history": {
+    "train_loss": [
+      0.691259,
+      0.682674,
+      1.093849
+    ],
+    "val_loss": [
+      0.584083,
+      2.154439,
+      0.803846
+    ]
+  },
   "test": {
-    "accuracy": 0.4528448947778644,
-    "macro_f1": 0.45036150379321094,
-    "weighted_f1": 0.4427720388243877,
-    "classification_report": "              precision    recall  f1-score   support\n\n barely-true       0.43      0.46      0.44       214\n       false       0.46      0.46      0.46       250\n   half-true       0.45      0.44      0.45       267\n mostly-true       0.43      0.53      0.48       249\n  pants-fire       0.42      0.77      0.54        92\n        true       0.70      0.22      0.33       211\n\n    accuracy                           0.45      1283\n   macro avg       0.48      0.48      0.45      1283\nweighted avg       0.48      0.45      0.44      1283\n"
+    "accuracy": 0.22759158222915044,
+    "macro_f1": 0.09059437222738058,
+    "weighted_f1": 0.11054013414474403,
+    "classification_report": "              precision    recall  f1-score   support\n\n barely-true       0.00      0.00      0.00       214\n       false       0.00      0.00      0.00       250\n   half-true       0.22      0.97      0.36       267\n mostly-true       0.30      0.13      0.18       249\n  pants-fire       0.00      0.00      0.00        92\n        true       0.00      0.00      0.00       211\n\n    accuracy                           0.23      1283\n   macro avg       0.09      0.18      0.09      1283\nweighted avg       0.10      0.23      0.11      1283\n"
   }
 }

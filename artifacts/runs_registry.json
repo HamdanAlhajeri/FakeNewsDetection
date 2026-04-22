@@ -1,5 +1,12 @@
 [
   {
+    "run_id": "run_20260422_160909",
+    "timestamp": "2026-04-22T22:15:43.392843",
+    "uri": "tinker://d481dcca-e364-5498-825d-877c04e88fad:train:0/sampler_weights/run_20260422_160909",
+    "accuracy": 0.2276,
+    "macro_f1": 0.0906
+  },
+  {
     "run_id": "eval_20260416_124124",
     "timestamp": "2026-04-16T14:45:25.040074",
     "uri": "tinker://51659f4a-41f4-5e7f-9675-6de22702f86d:train:0/sampler_weights/run_20260415_175154",

@@ -10,8 +10,16 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
+import nltk
+from nltk.corpus import stopwords
 
 from config import TSV_COLUMNS, LABEL_TO_IDX, LABEL_NAMES
+
+try:
+    _STOPWORDS = set(stopwords.words('english'))
+except LookupError:
+    nltk.download('stopwords', quiet=True)
+    _STOPWORDS = set(stopwords.words('english'))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,9 +45,12 @@ class DataProcessor:
     def clean_text(text) -> str:
         if not isinstance(text, str) or not text.strip():
             return ""
+        text = text.lower()
         text = re.sub(r'https?://\S+|www\.\S+', '', text)
         text = re.sub(r'\S+@\S+', '', text)
-        return ' '.join(text.split())
+        text = re.sub(r'[^a-z0-9 ]', ' ', text)
+        tokens = [t for t in text.split() if t not in _STOPWORDS]
+        return ' '.join(tokens)
 
     # Count columns → human-readable label names
     _COUNT_COLS = [

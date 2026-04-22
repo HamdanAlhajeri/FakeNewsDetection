@@ -1,0 +1,63 @@
+BASELINE COMPARISON REPORT
+Test samples: 1283
+
+===========================================================================
+Model                                    Accuracy   Macro F1     Wtd F1
+---------------------------------------------------------------------------
+Majority Class                           0.2081  (20.8%)     0.0574     0.0717
+Uniform Random (1/6 per class)           0.1871  (18.7%)     0.1848     0.1897
+Stratified Random                        0.2042  (20.4%)     0.1930     0.2049
+Fine-tuned LoRA (run_20260414_225118)    0.4552  (45.5%)     0.4558     0.4424
+===========================================================================
+  Random chance (uniform): ~16.7%
+  Gain of fine-tuned model over majority baseline: +24.7 pp accuracy
+
+PER-CLASS BREAKDOWN
+
+Majority Class
+----------------------------------------
+              precision    recall  f1-score   support
+
+ barely-true       0.00      0.00      0.00       214
+       false       0.00      0.00      0.00       250
+   half-true       0.21      1.00      0.34       267
+ mostly-true       0.00      0.00      0.00       249
+  pants-fire       0.00      0.00      0.00        92
+        true       0.00      0.00      0.00       211
+
+    accuracy                           0.21      1283
+   macro avg       0.03      0.17      0.06      1283
+weighted avg       0.04      0.21      0.07      1283
+
+
+Uniform Random (1/6 per class)
+----------------------------------------
+              precision    recall  f1-score   support
+
+ barely-true       0.22      0.23      0.22       214
+       false       0.23      0.18      0.20       250
+   half-true       0.20      0.16      0.18       267
+ mostly-true       0.20      0.18      0.19       249
+  pants-fire       0.10      0.24      0.14        92
+        true       0.18      0.18      0.18       211
+
+    accuracy                           0.19      1283
+   macro avg       0.19      0.19      0.18      1283
+weighted avg       0.20      0.19      0.19      1283
+
+
+Stratified Random
+----------------------------------------
+              precision    recall  f1-score   support
+
+ barely-true       0.19      0.20      0.19       214
+       false       0.21      0.22      0.22       250
+   half-true       0.26      0.24      0.25       267
+ mostly-true       0.21      0.20      0.20       249
+  pants-fire       0.10      0.11      0.10        92
+        true       0.20      0.19      0.19       211
+
+    accuracy                           0.20      1283
+   macro avg       0.19      0.19      0.19      1283
+weighted avg       0.21      0.20      0.20      1283
+

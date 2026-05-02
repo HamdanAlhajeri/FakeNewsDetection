@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Few-Shot (3-shot, 18 examples, base Qwen3-8B)",
+    "accuracy": 0.1068,
+    "macro_f1": 0.056,
+    "weighted_f1": 0.0421,
+    "shots": 3,
+    "total_examples": 18,
+    "tinker_uri": "tinker://7040d553-2531-5262-af78-ee530bcd1ee1:train:0/sampler_weights/fewshot-baseline"
+  },
+  {
+    "name": "Fine-tuned LoRA (run_20260414_225118)",
+    "accuracy": 0.4552,
+    "macro_f1": 0.4558,
+    "weighted_f1": 0.4424,
+    "shots": 3,
+    "total_examples": 18,
+    "tinker_uri": "tinker://7040d553-2531-5262-af78-ee530bcd1ee1:train:0/sampler_weights/fewshot-baseline"
+  }
+]

@@ -18,6 +18,12 @@
     "weighted_f1": 0.2049
   },
   {
+    "name": "Zero-Shot Qwen3-8B (no LoRA)",
+    "accuracy": 0.1535,
+    "macro_f1": 0.0696,
+    "weighted_f1": 0.0683
+  },
+  {
     "name": "Fine-tuned LoRA (run_20260414_225118)",
     "accuracy": 0.4552,
     "macro_f1": 0.4558,

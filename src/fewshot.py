@@ -61,20 +61,24 @@ RANDOM_SEED = 42
 
 # ── prompt building ───────────────────────────────────────────────────────────
 
-FEWSHOT_HEADER = (
-    "Here are some examples of political statement truthfulness classification:\n\n"
+FEWSHOT_EXAMPLE_USER = (
+    "<|im_start|>user\n"
+    "Classify the truthfulness of the following political statement and its context.\n\n"
+    "{text}\n\n"
+    "Choose exactly one label: barely-true, false, half-true, "
+    "mostly-true, pants-fire, true\n\n"
+    "Label:<|im_end|>\n"
 )
 
-FEWSHOT_EXAMPLE_TEMPLATE = (
-    "{text}\n"
-    "Label: {label}\n\n"
+FEWSHOT_EXAMPLE_ASSISTANT = (
+    "<|im_start|>assistant\n"
+    "{label}<|im_end|>\n"
 )
 
 FEWSHOT_QUERY_TEMPLATE = (
-    "<|im_start|>user\n"
-    "{header}"
     "{examples}"
-    "Now classify this statement:\n\n"
+    "<|im_start|>user\n"
+    "Classify the truthfulness of the following political statement and its context.\n\n"
     "{text}\n\n"
     "Choose exactly one label: barely-true, false, half-true, "
     "mostly-true, pants-fire, true\n\n"
@@ -103,22 +107,22 @@ def select_examples(train_df: pd.DataFrame, shots: int, seed: int = RANDOM_SEED)
 
 def build_fewshot_prompt(query_text: str, examples: dict[str, list[str]], shots: int) -> str:
     """
-    Build the full few-shot prompt for one test sample.
+    Build the full few-shot prompt for one test sample using proper multi-turn
+    ChatML format — each example is a user/assistant turn pair.
     Examples are interleaved across classes so no single class appears in a block.
     """
-    # Interleave: [label0_ex0, label1_ex0, ..., label0_ex1, label1_ex1, ...]
     interleaved = []
     for shot_idx in range(shots):
         for label in LABEL_NAMES:
             interleaved.append((label, examples[label][shot_idx]))
 
     example_strs = "".join(
-        FEWSHOT_EXAMPLE_TEMPLATE.format(text=text, label=label)
+        FEWSHOT_EXAMPLE_USER.format(text=text)
+        + FEWSHOT_EXAMPLE_ASSISTANT.format(label=label)
         for label, text in interleaved
     )
 
     return FEWSHOT_QUERY_TEMPLATE.format(
-        header=FEWSHOT_HEADER,
         examples=example_strs,
         text=query_text,
     )
@@ -171,9 +175,9 @@ def score_labels(prompt: str, sampling_client, tokenizer) -> str:
             tokens=prompt_input.to_ints() + completion_tokens
         )
         logprobs = sampling_client.compute_logprobs(full_input).result()
-        logprob_dict[label] = float(sum(
-            lp for lp in logprobs[-len(completion_tokens):] if lp is not None
-        ))
+        scores = [lp for lp in logprobs[-len(completion_tokens):] if lp is not None]
+        # Normalize by token count so longer labels aren't penalized unfairly
+        logprob_dict[label] = float(sum(scores) / len(scores)) if scores else float('-inf')
     return max(logprob_dict, key=logprob_dict.get)
 
 

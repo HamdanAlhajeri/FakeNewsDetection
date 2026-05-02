@@ -1,0 +1,28 @@
+FEW-SHOT BASELINE — 3 example(s) per class (18 total)
+Test samples: 1283   |   Model: Qwen/Qwen3-8B
+
+===========================================================================
+Model                                      Accuracy   Macro F1     Wtd F1
+---------------------------------------------------------------------------
+Few-Shot (3-shot, 18 examples, base Qwen3-8B)   0.1068  (10.7%)     0.0560     0.0421
+Fine-tuned LoRA (run_20260414_225118)      0.4552  (45.5%)     0.4558     0.4424
+===========================================================================
+  Random chance (uniform): ~16.7%
+
+PER-CLASS BREAKDOWN
+
+Few-Shot (3-shot, 18 examples, base Qwen3-8B)
+----------------------------------------
+              precision    recall  f1-score   support
+
+ barely-true       0.00      0.00      0.00       214
+       false       0.11      0.19      0.14       250
+   half-true       0.00      0.00      0.00       267
+ mostly-true       0.33      0.00      0.01       249
+  pants-fire       0.11      0.96      0.19        92
+        true       0.00      0.00      0.00       211
+
+    accuracy                           0.11      1283
+   macro avg       0.09      0.19      0.06      1283
+weighted avg       0.09      0.11      0.04      1283
+

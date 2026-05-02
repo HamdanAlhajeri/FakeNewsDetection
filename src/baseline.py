@@ -171,9 +171,8 @@ class ZeroShotBaseline:
                 tokens=prompt_input.to_ints() + completion_tokens
             )
             logprobs = self.sampling_client.compute_logprobs(full_input).result()
-            logprob_dict[label] = float(sum(
-                lp for lp in logprobs[-len(completion_tokens):] if lp is not None
-            ))
+            scores = [lp for lp in logprobs[-len(completion_tokens):] if lp is not None]
+            logprob_dict[label] = float(sum(scores) / len(scores)) if scores else float('-inf')
         return max(logprob_dict, key=logprob_dict.get)
 
     def predict(self, texts: list[str]) -> list[str]:
